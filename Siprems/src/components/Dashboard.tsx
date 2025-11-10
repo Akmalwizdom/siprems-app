@@ -315,7 +315,16 @@ export default function Dashboard() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="date" stroke="#888" />
                     <YAxis stroke="#888" />
-                    <Tooltip />
+                    <RechartsTooltip
+                      content={({ active, payload, label }) => (
+                        <CustomLineTooltip
+                          active={active}
+                          payload={payload}
+                          label={label}
+                          explanation={label ? explanations.get(label) : undefined}
+                        />
+                      )}
+                    />
                     <Line
                       type="monotone"
                       dataKey="sales"
@@ -347,7 +356,7 @@ export default function Dashboard() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="product" stroke="#888" />
                     <YAxis stroke="#888" />
-                    <Tooltip />
+                    <RechartsTooltip content={<CustomBarTooltip />} />
                     <Legend />
                     <Bar dataKey="current" fill="#3B82F6" radius={[8, 8, 0, 0]} />
                     <Bar dataKey="optimal" fill="#93C5FD" radius={[8, 8, 0, 0]} />
