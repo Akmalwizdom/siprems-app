@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react'; // Import
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { TrendingUp, Package, ShoppingBag, AlertCircle, Loader2 } from 'lucide-react'; // Import
+import { TrendingUp, Package, ShoppingBag, AlertCircle, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
+import { Button } from './ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import {
   LineChart,
   Line,
@@ -11,26 +14,40 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { Skeleton } from './ui/skeleton'; // Import Skeleton
+import { Skeleton } from './ui/skeleton';
+import InsightCard from './InsightCard';
 
-// Tipe Data
 interface CardStats {
   daily_transactions: number;
   active_products: number;
   low_stock_items: number;
 }
+
 interface SalesTrendData {
   date: string;
   sales: number;
 }
+
 interface StockCompData {
   product: string;
   current: number;
   optimal: number;
+}
+
+interface InsightData {
+  product_name: string;
+  sku: string;
+  change_percent: string;
+  reason: string;
+}
+
+interface ChartExplanation {
+  date: string;
+  explanation: string;
 }
 
 const containerVariants = {
