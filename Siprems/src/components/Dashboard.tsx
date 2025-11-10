@@ -182,6 +182,48 @@ export default function Dashboard() {
     yearly: { value: '+42%', label: 'Expected increase' },
   };
 
+  const handleRestockNow = async (sku: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/restock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku, quantity: 100 }),
+      });
+      if (!response.ok) throw new Error('Failed to submit restock request');
+      setRestockMessage('Restock request submitted successfully!');
+      setTimeout(() => {
+        setRestockModalOpen(false);
+        setRestockMessage('');
+      }, 2000);
+    } catch (error) {
+      console.error('Restock error:', error);
+      setRestockMessage('Failed to submit restock request. Please try again.');
+    }
+  };
+
+  const handleNavigateProduct = (sku: string) => {
+    window.location.href = `/products/${sku}`;
+  };
+
+  const handleExportReport = async () => {
+    try {
+      const response = await fetch(`${API_URL}/dashboard-stats/export`);
+      if (!response.ok) throw new Error('Failed to export report');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `dashboard-report-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+    }
+  };
+
   return (
     <motion.div
       variants={containerVariants}
