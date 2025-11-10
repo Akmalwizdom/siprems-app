@@ -368,24 +368,29 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
-      {/* AI Insight Card (Tetap statis untuk saat ini) */}
-      <motion.div variants={itemVariants}>
-        <Card className="rounded-2xl border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 shadow-sm">
-          <CardHeader>
-            <div className="flex items-start space-x-3">
-              <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-1" />
-              <div>
-                <CardTitle className="text-blue-900 dark:text-blue-300">AI Insight</CardTitle>
-                <p className="text-sm text-blue-700 dark:text-blue-400 mt-2">
-                  Stock for <span className="font-semibold">Laptop</span> is expected to increase next
-                  week by <span className="font-semibold">+20%</span> due to seasonal trends. Consider
-                  restocking to meet demand.
-                </p>
-              </div>
-            </div>
-          </CardHeader>
-        </Card>
-      </motion.div>
+      {/* Mini Insight Cards - Top 3 Products with Rising Demand */}
+      {insights.length > 0 && (
+        <motion.div variants={itemVariants}>
+          <div className="space-y-4">
+            <h2 className="text-gray-900 dark:text-white text-lg font-semibold">Top 3 Products with Rising Demand</h2>
+            {insights.map((insight, index) => (
+              <InsightCard
+                key={index}
+                title="AI Insight"
+                description="Stock for"
+                productName={insight.product_name}
+                changePercent={`increase by ${insight.change_percent}`}
+                reason={insight.reason}
+                sku={insight.sku}
+                onRestockClick={handleRestockNow}
+                onNavigateProduct={handleNavigateProduct}
+                onExportClick={handleExportReport}
+                isLoading={isLoading}
+              />
+            ))}
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
