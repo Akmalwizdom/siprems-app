@@ -1,0 +1,6 @@
+flask
+pandas
+prophet
+flask-cors
+psycopg2-binary
+python-dotenv
