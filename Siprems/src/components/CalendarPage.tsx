@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'; // Import useEffect
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Plus, X, Calendar as CalendarIcon, Loader2, AlertTriangle } from 'lucide-react';
+import { Plus, X, Calendar as CalendarIcon, Loader2, AlertTriangle, RefreshCw, Check } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import {
@@ -16,11 +16,18 @@ import { Label } from './ui/label';
 import { toast } from 'sonner@2.0.3';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
-// Tipe data dari database
+// Types
+interface EventImpact {
+  eventId: number;
+  impactType: 'positive' | 'negative' | 'neutral';
+  expectedChange: string;
+  description: string;
+}
+
 interface CalendarEvent {
   event_id: number;
   event_name: string;
-  event_date: string; // ISO date string (YYYY-MM-DD)
+  event_date: string;
   type: 'holiday' | 'custom';
   description: string | null;
   include_in_prediction: boolean;
@@ -33,58 +40,184 @@ interface EventFormData {
   includeInPrediction: boolean;
 }
 
-const API_URL = 'http://localhost:5000';
+// Mock API Functions
+const mockEventImpactData: Record<number, EventImpact> = {
+  1: {
+    eventId: 1,
+    impactType: 'positive',
+    expectedChange: '+35%',
+    description: 'Sales typically rise +35% during New Year period due to fresh start purchases',
+  },
+  2: {
+    eventId: 2,
+    impactType: 'positive',
+    expectedChange: '+28%',
+    description: 'Black Friday events historically drive +28% sales increase',
+  },
+  3: {
+    eventId: 3,
+    impactType: 'negative',
+    expectedChange: '-15%',
+    description: 'During this period, sales typically decrease by -15%',
+  },
+  4: {
+    eventId: 4,
+    impactType: 'positive',
+    expectedChange: '+42%',
+    description: 'Christmas season shows the highest impact with +42% increase',
+  },
+  5: {
+    eventId: 5,
+    impactType: 'neutral',
+    expectedChange: '±5%',
+    description: 'Minimal impact expected on sales patterns',
+  },
+};
 
-// ... (Fungsi helper getDaysInMonth, getFirstDayOfMonth, formatDate, parseDate tidak berubah) ...
+const mockFetchEventImpact = async (eventId: number): Promise<EventImpact | null> => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve(mockEventImpactData[eventId] || null);
+    }, 300);
+  });
+};
+
+const mockToggleEventInclusion = async (
+  eventId: number,
+  includeInPrediction: boolean
+): Promise<{ eventId: number; includedInPrediction: boolean }> => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({ eventId, includedInPrediction: includeInPrediction });
+    }, 200);
+  });
+};
+
+const mockSyncEvents = async (): Promise<{ synced: boolean; newEvents: number }> => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({ synced: true, newEvents: Math.floor(Math.random() * 5) + 1 });
+    }, 800);
+  });
+};
+
+// Helper functions
 const getDaysInMonth = (date: Date): number => {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
 };
+
 const getFirstDayOfMonth = (date: Date): number => {
   return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
 };
+
 const formatDate = (year: number, month: number, day: number): string => {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
+const getEventColorClass = (
+  eventType: 'holiday' | 'custom',
+  hasPredictedImpact: boolean
+): string => {
+  if (hasPredictedImpact && eventType === 'custom') {
+    return 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border border-orange-300 dark:border-orange-700';
+  }
+  if (eventType === 'holiday') {
+    return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700';
+  }
+  return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-300 dark:border-green-700';
+};
+
+const API_URL = 'http://localhost:5000';
+
 export default function CalendarPage() {
-  const [currentDate, setCurrentDate] = useState(new Date(2025, 10)); // November 2025
+  const [currentDate, setCurrentDate] = useState(new Date(2025, 10));
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [hoveredEvent, setHoveredEvent] = useState<number | null>(null);
+  const [eventImpacts, setEventImpacts] = useState<Record<number, EventImpact | null>>({});
+  const [loadingImpactId, setLoadingImpactId] = useState<number | null>(null);
+  const [togglingEventId, setTogglingEventId] = useState<number | null>(null);
+
   const [formData, setFormData] = useState<EventFormData>({
     name: '',
     date: '',
     description: '',
-    includeInPrediction: true, // Default true
+    includeInPrediction: true,
   });
 
-  // --- Fetch Events ---
-  const fetchEvents = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${API_URL}/events`);
-      if (!response.ok) throw new Error('Failed to fetch events');
-      const data: CalendarEvent[] = await response.json();
-      setAllEvents(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // Initialize with mock events
   useEffect(() => {
-    fetchEvents();
+    const initializeMockEvents = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Simulate network delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const mockEvents: CalendarEvent[] = [
+          {
+            event_id: 1,
+            event_name: 'New Year',
+            event_date: '2025-01-01',
+            type: 'holiday',
+            description: 'New Year celebration',
+            include_in_prediction: true,
+          },
+          {
+            event_id: 2,
+            event_name: 'Black Friday',
+            event_date: '2025-11-28',
+            type: 'custom',
+            description: 'Annual Black Friday sale',
+            include_in_prediction: true,
+          },
+          {
+            event_id: 3,
+            event_name: 'Cyber Monday',
+            event_date: '2025-12-01',
+            type: 'custom',
+            description: 'Cyber Monday deals',
+            include_in_prediction: false,
+          },
+          {
+            event_id: 4,
+            event_name: 'Christmas',
+            event_date: '2025-12-25',
+            type: 'holiday',
+            description: 'Christmas holiday',
+            include_in_prediction: true,
+          },
+          {
+            event_id: 5,
+            event_name: 'Store Anniversary',
+            event_date: '2025-11-15',
+            type: 'custom',
+            description: 'Our store anniversary celebration',
+            include_in_prediction: false,
+          },
+        ];
+        
+        setAllEvents(mockEvents);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeMockEvents();
   }, []);
 
-  const { nationalHolidays, customEvents } = useMemo(() => {
+  // Calculate summary statistics
+  const { nationalHolidays, customEvents, includedInPrediction } = useMemo(() => {
     return {
       nationalHolidays: allEvents.filter((e) => e.type === 'holiday'),
       customEvents: allEvents.filter((e) => e.type === 'custom'),
+      includedInPrediction: allEvents.filter((e) => e.include_in_prediction),
     };
   }, [allEvents]);
 
@@ -112,14 +245,19 @@ export default function CalendarPage() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/events`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      if (!response.ok) throw new Error('Failed to add event');
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      const newEvent: CalendarEvent = {
+        event_id: Math.max(...allEvents.map(e => e.event_id), 0) + 1,
+        event_name: formData.name,
+        event_date: formData.date,
+        type: 'custom',
+        description: formData.description,
+        include_in_prediction: formData.includeInPrediction,
+      };
 
-      await fetchEvents(); // Muat ulang data
+      setAllEvents([...allEvents, newEvent]);
       setFormData({ name: '', date: '', description: '', includeInPrediction: true });
       setIsAddOpen(false);
       toast.success('Event added successfully');
@@ -130,17 +268,79 @@ export default function CalendarPage() {
 
   const handleDeleteEvent = async (eventId: number) => {
     try {
-      const response = await fetch(`${API_URL}/events/${eventId}`, {
-        method: 'DELETE',
-      });
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 200));
       
-      const resData = await response.json();
-      if (!response.ok) throw new Error(resData.error || 'Failed to delete event');
-      
-      await fetchEvents(); // Muat ulang data
+      setAllEvents(allEvents.filter(e => e.event_id !== eventId));
       toast.success('Event deleted successfully');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete event');
+    }
+  };
+
+  const handleFetchEventImpact = async (eventId: number) => {
+    if (eventImpacts[eventId] !== undefined) return;
+    
+    setLoadingImpactId(eventId);
+    try {
+      const impact = await mockFetchEventImpact(eventId);
+      setEventImpacts((prev) => ({ ...prev, [eventId]: impact }));
+    } catch (err) {
+      toast.error('Failed to fetch event impact');
+    } finally {
+      setLoadingImpactId(null);
+    }
+  };
+
+  const handleToggleEventInclusion = async (eventId: number, currentInclusion: boolean) => {
+    setTogglingEventId(eventId);
+    try {
+      const response = await mockToggleEventInclusion(eventId, !currentInclusion);
+      
+      setAllEvents(
+        allEvents.map((e) =>
+          e.event_id === eventId
+            ? { ...e, include_in_prediction: response.includedInPrediction }
+            : e
+        )
+      );
+      
+      toast.success(`Event ${response.includedInPrediction ? 'included' : 'excluded'} from prediction model`);
+    } catch (err) {
+      toast.error('Failed to update event');
+    } finally {
+      setTogglingEventId(null);
+    }
+  };
+
+  const handleSyncEvents = async () => {
+    setIsSyncing(true);
+    try {
+      const response = await mockSyncEvents();
+      
+      if (response.synced) {
+        // Simulate adding new synced events
+        const newSyncedEvents: CalendarEvent[] = Array.from(
+          { length: response.newEvents },
+          (_, i) => ({
+            event_id: Math.max(...allEvents.map(e => e.event_id), 0) + i + 1,
+            event_name: `Synced Holiday ${i + 1}`,
+            event_date: new Date(2025, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1)
+              .toISOString()
+              .split('T')[0],
+            type: 'holiday' as const,
+            description: `Auto-synced holiday from external calendar`,
+            include_in_prediction: true,
+          })
+        );
+        
+        setAllEvents([...allEvents, ...newSyncedEvents]);
+        toast.success(`Events synced successfully! ${response.newEvents} new events added.`);
+      }
+    } catch (err) {
+      toast.error('Failed to sync events');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -155,7 +355,7 @@ export default function CalendarPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-gray-900 dark:text-white mb-2">Calendar</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage holidays and custom events</p>
+          <p className="text-gray-600 dark:text-gray-400">Manage holidays and custom events connected to predictions</p>
         </div>
 
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
@@ -166,7 +366,6 @@ export default function CalendarPage() {
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px] rounded-2xl">
-            {/* ... Konten Dialog Tambah Event (tidak berubah) ... */}
             <DialogHeader>
               <DialogTitle>Add Custom Event</DialogTitle>
               <DialogDescription>
@@ -243,28 +442,63 @@ export default function CalendarPage() {
         </Dialog>
       </div>
 
-      {/* Events Summary Card */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm text-gray-600 dark:text-gray-400">National Holidays</CardTitle>
-            <CalendarIcon className="w-5 h-5 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <div className="text-3xl text-gray-900 dark:text-white">{nationalHolidays.length}</div>}
-          </CardContent>
-        </Card>
+      {/* Event Sync Summary Card */}
+      <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-gray-900 dark:text-white">Event Sync Summary</CardTitle>
+            <CardDescription>Overview of all calendar events and prediction inclusion</CardDescription>
+          </div>
+          <Button
+            onClick={handleSyncEvents}
+            disabled={isSyncing}
+            size="sm"
+            className="rounded-xl bg-blue-500 hover:bg-blue-600 text-white"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+            Sync Events
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-12 w-12 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                  <CalendarIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">National Holidays</p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{nationalHolidays.length}</p>
+              </div>
+            </div>
 
-        <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Custom Events</CardTitle>
-            <CalendarIcon className="w-5 h-5 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <div className="text-3xl text-gray-900 dark:text-white">{customEvents.length}</div>}
-          </CardContent>
-        </Card>
-      </div>
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-12 w-12 rounded-lg bg-green-100 dark:bg-green-900/30">
+                  <CalendarIcon className="h-6 w-6 text-green-600 dark:text-green-400" />
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Custom Events</p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{customEvents.length}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <div className="flex-shrink-0">
+                <div className="flex items-center justify-center h-12 w-12 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                  <CalendarIcon className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Included in Prediction</p>
+                <p className="text-2xl font-semibold text-gray-900 dark:text-white">{includedInPrediction.length}</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Calendar Grid */}
       <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
@@ -331,44 +565,93 @@ export default function CalendarPage() {
                       >
                         <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">{day}</div>
                         <div className="space-y-1">
-                          {dayEvents.map((event) => (
-                            <div key={event.event_id} className="relative group">
-                              <div
-                                className={`text-xs px-2 py-1 rounded-md cursor-pointer truncate ${
-                                  event.type === 'holiday'
-                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                                    : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                                }`}
-                                onMouseEnter={() => setHoveredEvent(event.event_id)}
-                                onMouseLeave={() => setHoveredEvent(null)}
-                              >
-                                {event.event_name}
-                              </div>
+                          {dayEvents.map((event) => {
+                            const impact = eventImpacts[event.event_id];
+                            const hasPredictedImpact = impact && (impact.impactType === 'positive' || impact.impactType === 'negative');
 
-                              {/* Tooltip */}
-                              {hoveredEvent === event.event_id && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  className="absolute z-50 bottom-full left-0 mb-2 w-48 p-3 bg-gray-900 dark:bg-gray-700 text-white rounded-lg shadow-lg text-xs"
+                            return (
+                              <div key={event.event_id} className="relative group">
+                                <div
+                                  className={`text-xs px-2 py-1 rounded-md cursor-pointer truncate transition-all ${getEventColorClass(
+                                    event.type,
+                                    event.include_in_prediction && hasPredictedImpact
+                                  )}`}
+                                  onMouseEnter={() => {
+                                    setHoveredEvent(event.event_id);
+                                    handleFetchEventImpact(event.event_id);
+                                  }}
+                                  onMouseLeave={() => setHoveredEvent(null)}
                                 >
-                                  <p className="font-semibold">{event.event_name}</p>
-                                  {event.description && <p className="text-gray-300 mt-1">{event.description}</p>}
-                                  <p className="text-gray-400 mt-1">{event.event_date}</p>
-                                  {event.type === 'custom' && (
-                                    <button
-                                      onClick={() => handleDeleteEvent(event.event_id)}
-                                      className="mt-2 text-red-400 hover:text-red-300 text-xs flex items-center space-x-1"
-                                    >
-                                      <X className="w-3 h-3" />
-                                      <span>Delete</span>
-                                    </button>
-                                  )}
-                                </motion.div>
-                              )}
-                            </div>
-                          ))}
+                                  {event.event_name}
+                                </div>
+
+                                {/* Tooltip with Impact Info and Toggle */}
+                                {hoveredEvent === event.event_id && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    className="absolute z-50 bottom-full left-0 mb-2 w-64 p-4 bg-gray-900 dark:bg-gray-700 text-white rounded-lg shadow-lg text-xs"
+                                  >
+                                    <p className="font-semibold">{event.event_name}</p>
+                                    {event.description && (
+                                      <p className="text-gray-300 mt-1">{event.description}</p>
+                                    )}
+                                    <p className="text-gray-400 mt-1">{event.event_date}</p>
+
+                                    {/* Predicted Impact Info */}
+                                    {loadingImpactId === event.event_id ? (
+                                      <div className="flex items-center mt-3 space-x-2">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        <span>Loading impact...</span>
+                                      </div>
+                                    ) : impact ? (
+                                      <div className="mt-3 p-2 bg-gray-800 rounded">
+                                        <p className="font-semibold text-yellow-300">Predicted Impact:</p>
+                                        <p className={`text-sm mt-1 ${
+                                          impact.impactType === 'positive'
+                                            ? 'text-green-400'
+                                            : impact.impactType === 'negative'
+                                            ? 'text-red-400'
+                                            : 'text-gray-300'
+                                        }`}>
+                                          {impact.expectedChange}
+                                        </p>
+                                        <p className="text-gray-400 text-xs mt-1">{impact.description}</p>
+                                      </div>
+                                    ) : null}
+
+                                    {/* Include in Prediction Toggle */}
+                                    <div className="mt-3 space-y-2 border-t border-gray-700 pt-3">
+                                      <label className="flex items-center space-x-2 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={event.include_in_prediction}
+                                          onChange={() => handleToggleEventInclusion(event.event_id, event.include_in_prediction)}
+                                          disabled={togglingEventId === event.event_id}
+                                          className="w-3 h-3 rounded accent-blue-500 cursor-pointer disabled:opacity-50"
+                                        />
+                                        <span className="text-xs text-gray-300">
+                                          {togglingEventId === event.event_id ? 'Updating...' : 'Include in prediction model'}
+                                        </span>
+                                      </label>
+                                    </div>
+
+                                    {/* Delete Button for Custom Events */}
+                                    {event.type === 'custom' && (
+                                      <button
+                                        onClick={() => handleDeleteEvent(event.event_id)}
+                                        className="mt-3 text-red-400 hover:text-red-300 text-xs flex items-center space-x-1"
+                                      >
+                                        <X className="w-3 h-3" />
+                                        <span>Delete</span>
+                                      </button>
+                                    )}
+                                  </motion.div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -377,7 +660,7 @@ export default function CalendarPage() {
               </div>
 
               {/* Legend */}
-              <div className="flex items-center space-x-6 text-sm">
+              <div className="flex flex-wrap items-center gap-6 text-sm">
                 <div className="flex items-center space-x-2">
                   <div className="w-3 h-3 bg-blue-100 dark:bg-blue-900/30 rounded border border-blue-300 dark:border-blue-700" />
                   <span className="text-gray-600 dark:text-gray-400">National Holiday</span>
@@ -385,6 +668,10 @@ export default function CalendarPage() {
                 <div className="flex items-center space-x-2">
                   <div className="w-3 h-3 bg-green-100 dark:bg-green-900/30 rounded border border-green-300 dark:border-green-700" />
                   <span className="text-gray-600 dark:text-gray-400">Custom Event</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-orange-100 dark:bg-orange-900/30 rounded border border-orange-300 dark:border-orange-700" />
+                  <span className="text-gray-600 dark:text-gray-400">Predicted Impact Event</span>
                 </div>
               </div>
             </div>
