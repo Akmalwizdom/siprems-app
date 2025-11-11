@@ -214,7 +214,11 @@ export default function InsightsPage() {
 
     messages.forEach((message) => {
       doc.setFontSize(11);
-      doc.setTextColor(message.role === 'user' ? 0, 102, 204 : 50, 50, 50);
+      if (message.role === 'user') {
+        doc.setTextColor(0, 102, 204);
+      } else {
+        doc.setTextColor(50, 50, 50);
+      }
       const role = message.role === 'user' ? 'You' : 'AI Assistant';
       doc.text(`${role}:`, margin, yPosition);
       yPosition += 6;
