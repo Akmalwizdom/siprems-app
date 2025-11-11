@@ -462,33 +462,33 @@ def get_dashboard_stats():
                 (SELECT COUNT(*) FROM products WHERE stock <= 5) as low_stock_items;
         """
         cards_data = db_query(query_cards, fetch_all=False)
-        
+
         # 2. Tren Penjualan 7 Hari (Line Chart)
         query_sales_trend = """
-            SELECT 
+            SELECT
                 DATE(gs.day) as date,
                 COALESCE(SUM(t.quantity_sold), 0) as sales
-            FROM 
+            FROM
                 generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') as gs(day)
-            LEFT JOIN 
+            LEFT JOIN
                 transactions t ON DATE(t.transaction_date) = gs.day
-            GROUP BY 
+            GROUP BY
                 gs.day
-            ORDER BY 
+            ORDER BY
                 gs.day;
         """
         sales_trend = db_query(query_sales_trend, fetch_all=True)
         # Format data untuk Recharts
         formatted_sales_trend = [
-            {'date': r['date'].strftime('%a'), 'sales': int(r['sales'])} 
+            {'date': r['date'].strftime('%a'), 'sales': int(r['sales'])}
             for r in sales_trend
         ]
-        
+
         # 3. Perbandingan Stok (Bar Chart)
         # Ambil 5 produk dengan stok terendah
         query_stock_comp = """
-            SELECT 
-                name as product, 
+            SELECT
+                name as product,
                 stock as current,
                 (stock + 20) as optimal -- Logika optimal dummy, bisa diganti
             FROM products
@@ -502,6 +502,164 @@ def get_dashboard_stats():
             'salesTrend': formatted_sales_trend,
             'stockComparison': stock_comparison
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# === HALAMAN INSIGHTS (InsightsPage.tsx) - CHATBOT ===
+
+@app.route('/api/chatbot/query', methods=['POST'])
+def chatbot_query():
+    """Endpoint untuk chatbot AI yang memberikan insights interaktif."""
+    try:
+        data = request.get_json() or {}
+        query = data.get('query', '').lower()
+        last_product = data.get('lastProduct', 'LAP-001')
+
+        response_text = ""
+        chart_data = None
+
+        # Deteksi intent dari query user
+        if 'top' in query and ('product' in query or 'selling' in query or 'sales' in query):
+            # Intent: Show top-selling products
+            q = """
+                SELECT
+                    p.name,
+                    p.sku,
+                    SUM(t.quantity_sold) as total_sold,
+                    SUM(t.quantity_sold * t.price_per_unit) as total_revenue
+                FROM products p
+                LEFT JOIN transactions t ON p.product_id = t.product_id
+                GROUP BY p.product_id, p.name, p.sku
+                ORDER BY total_sold DESC
+                LIMIT 5;
+            """
+            top_products = db_query(q, fetch_all=True)
+
+            response_text = "Based on historical sales data, here are your top 5 performing products:\n\n"
+            for idx, product in enumerate(top_products, 1):
+                sold = product['total_sold'] or 0
+                revenue = product['total_revenue'] or 0
+                response_text += f"{idx}. **{product['name']}** (SKU: {product['sku']})\n   - Total Sold: {int(sold)} units\n   - Total Revenue: ${revenue:,.2f}\n\n"
+
+            # Prepare chart data
+            chart_data = {
+                'type': 'bar',
+                'data': [
+                    {
+                        'name': p['name'],
+                        'sold': int(p['total_sold'] or 0),
+                        'revenue': float(p['total_revenue'] or 0)
+                    }
+                    for p in top_products
+                ]
+            }
+
+        elif 'forecast' in query and 'next' in query and 'month' in query:
+            # Intent: Forecast next month
+            product_sku = last_product
+            product_sales_df = get_sales_data_from_db(product_sku)
+            holidays_df = get_holidays_from_db()
+
+            if not product_sales_df.empty:
+                forecast = run_prediction(product_sales_df, holidays_df, days_to_forecast=30)
+                prediction_only = forecast.iloc[-30:]
+
+                avg_forecast = prediction_only['yhat'].mean()
+                total_forecast = prediction_only['yhat'].sum()
+                trend = 'upward' if prediction_only.iloc[-1]['yhat'] > prediction_only.iloc[0]['yhat'] else 'downward'
+
+                product_info = get_current_stock_from_db(product_sku)
+
+                response_text = f"**30-Day Forecast for {product_info['name']} (SKU: {product_sku})**\n\n"
+                response_text += f"📊 **Trend**: {trend.capitalize()}\n"
+                response_text += f"📈 **Average Daily Sales**: {int(avg_forecast)} units\n"
+                response_text += f"🎯 **Total Forecasted Sales**: {int(total_forecast)} units\n"
+                response_text += f"📦 **Current Stock**: {int(product_info['stock'])} units\n\n"
+
+                if total_forecast > product_info['stock']:
+                    response_text += f"⚠️ **Action**: Recommend restocking {int(total_forecast - product_info['stock'])} units to meet expected demand."
+                else:
+                    response_text += f"✅ **Status**: Current stock is sufficient for the forecasted demand."
+
+                # Prepare chart data
+                chart_data = {
+                    'type': 'line',
+                    'data': [
+                        {
+                            'day': i,
+                            'forecast': round(float(row['yhat']), 2),
+                            'lower': round(float(row['yhat_lower']), 2),
+                            'upper': round(float(row['yhat_upper']), 2)
+                        }
+                        for i, (_, row) in enumerate(prediction_only.iterrows(), 1)
+                    ]
+                }
+
+        elif 'spike' in query or 'demand' in query and 'increase' in query or 'rise' in query:
+            # Intent: Explain demand spike
+            product_sku = last_product
+            product_sales_df = get_sales_data_from_db(product_sku)
+
+            if not product_sales_df.empty:
+                product_info = get_current_stock_from_db(product_sku)
+
+                # Analyze recent trends
+                recent_sales = product_sales_df.iloc[-30:] if len(product_sales_df) >= 30 else product_sales_df
+                avg_recent = recent_sales['y'].mean()
+                avg_historical = product_sales_df['y'].mean()
+
+                spike_percentage = ((avg_recent - avg_historical) / avg_historical * 100) if avg_historical > 0 else 0
+
+                response_text = f"**Demand Analysis for {product_info['name']}**\n\n"
+                response_text += f"📊 **Recent Activity (Last 30 Days)**\n"
+                response_text += f"- Average Daily Sales: {int(avg_recent)} units\n"
+                response_text += f"- Historical Average: {int(avg_historical)} units\n"
+                response_text += f"- Change: {spike_percentage:+.1f}%\n\n"
+
+                # Check for patterns
+                holidays_df = get_holidays_from_db()
+                if not holidays_df.empty:
+                    response_text += "📅 **Upcoming Events**: Check calendar for holidays or events that may impact demand.\n\n"
+
+                response_text += "💡 **Recommendations**:\n"
+                if spike_percentage > 20:
+                    response_text += "- Strong demand growth detected. Prepare for increased orders.\n"
+                    response_text += "- Ensure adequate inventory levels to avoid stockouts.\n"
+                elif spike_percentage > 0:
+                    response_text += "- Moderate demand increase. Monitor inventory levels closely.\n"
+                else:
+                    response_text += "- Demand is declining. Review marketing strategy and promotions.\n"
+
+                # Prepare chart data
+                chart_data = {
+                    'type': 'bar',
+                    'data': [
+                        {
+                            'period': 'Last 30 Days',
+                            'average': round(avg_recent, 2)
+                        },
+                        {
+                            'period': 'Historical',
+                            'average': round(avg_historical, 2)
+                        }
+                    ]
+                }
+
+        else:
+            # Default helpful response
+            response_text = f"I'm your AI inventory assistant. I can help you with:\n\n"
+            response_text += "🔝 **'Show top-selling products'** - View your best-performing items\n"
+            response_text += "📅 **'Forecast next month'** - Get 30-day sales predictions\n"
+            response_text += "📈 **'Explain demand spike'** - Analyze demand trends and changes\n"
+            response_text += "❓ **Ask any question** about {last_product} or inventory management!\n\n"
+            response_text += "What would you like to know?"
+
+        return jsonify({
+            'response': response_text,
+            'chartData': chart_data,
+            'lastProduct': last_product
+        })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
