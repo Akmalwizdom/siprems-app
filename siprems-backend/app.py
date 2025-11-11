@@ -177,10 +177,24 @@ def predict_stock():
 
 @app.route('/products', methods=['GET'])
 def get_products():
-    """Mengambil semua produk dari database."""
+    """Mengambil semua produk dari database, dengan opsional filter search."""
     try:
-        query = "SELECT * FROM products ORDER BY created_at DESC;"
-        products = db_query(query, fetch_all=True)
+        search = request.args.get('search', '').strip()
+
+        if search:
+            # Search by name or SKU
+            query = """
+                SELECT * FROM products
+                WHERE name ILIKE %s OR sku ILIKE %s
+                ORDER BY name ASC
+                LIMIT 50;
+            """
+            search_pattern = f"%{search}%"
+            products = db_query(query, (search_pattern, search_pattern), fetch_all=True)
+        else:
+            query = "SELECT * FROM products ORDER BY created_at DESC;"
+            products = db_query(query, fetch_all=True)
+
         return jsonify(products)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
