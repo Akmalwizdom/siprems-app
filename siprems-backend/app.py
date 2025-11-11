@@ -108,24 +108,29 @@ def run_prediction(sales_data_df, holidays_df, days_to_forecast=7):
 
 @app.route('/predict', methods=['POST'])
 def predict_stock():
-    # [KODE ENDPOINT /predict ANDA DARI SEBELUMNYA TETAP DI SINI]
-    # ... (Saya singkat agar tidak redundan, gunakan kode /predict dari respons saya sebelumnya)
     try:
-        product_sku_to_predict = 'LAP-001' # Hardcode untuk contoh
-        
+        data = request.get_json() or {}
+        product_sku_to_predict = data.get('product_sku', 'LAP-001')
+        time_range = data.get('time_range', 7)
+
+        if time_range not in [7, 30, 90]:
+            time_range = 7
+
         product_sales_df = get_sales_data_from_db(product_sku_to_predict)
         holidays_df = get_holidays_from_db()
         product_info = get_current_stock_from_db(product_sku_to_predict)
-        
+
         if product_sales_df.empty:
             return jsonify({'error': f'Tidak ada data penjualan untuk SKU {product_sku_to_predict}'}), 404
 
-        forecast = run_prediction(product_sales_df, holidays_df, days_to_forecast=7)
-        
+        forecast = run_prediction(product_sales_df, holidays_df, days_to_forecast=time_range)
+
         actual_data = product_sales_df.rename(columns={'y': 'actual'})
         forecast_with_actual = forecast.merge(actual_data, on='ds', how='left')
-        chart_data_raw = forecast_with_actual.iloc[-12:]
-        
+
+        lookback_days = min(12, len(product_sales_df))
+        chart_data_raw = forecast_with_actual.iloc[-(lookback_days + time_range):]
+
         chart_data = []
         for _, row in chart_data_raw.iterrows():
             chart_data.append({
@@ -136,15 +141,15 @@ def predict_stock():
                 'upper': round(row['yhat_upper'])
             })
 
-        prediction_only = forecast.iloc[-7:]
+        prediction_only = forecast.iloc[-time_range:]
         total_predicted_sales = prediction_only['yhat'].sum()
-        
-        safety_stock_factor = 1.20 
+
+        safety_stock_factor = 1.20
         optimal_stock = round(total_predicted_sales * safety_stock_factor)
-        
+
         current_product_stock = product_info['stock']
         suggestion_amount = optimal_stock - current_product_stock
-        
+
         if suggestion_amount <= 0:
             suggestion_text = "Stok Cukup"
             urgency = "low"
@@ -165,7 +170,92 @@ def predict_stock():
 
         return jsonify({
             'chartData': chart_data,
-            'recommendations': recommendations
+            'recommendations': recommendations,
+            'timeRange': time_range
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/predict/explain', methods=['POST'])
+def predict_explain():
+    try:
+        data = request.get_json() or {}
+        product_sku = data.get('product_sku', 'LAP-001')
+        time_range = data.get('time_range', 7)
+
+        product_sales_df = get_sales_data_from_db(product_sku)
+        holidays_df = get_holidays_from_db()
+
+        if product_sales_df.empty:
+            return jsonify({'error': 'No sales data available'}), 404
+
+        forecast = run_prediction(product_sales_df, holidays_df, days_to_forecast=time_range)
+
+        prediction_only = forecast.iloc[-time_range:]
+        avg_predicted = prediction_only['yhat'].mean()
+        trend = 'upward' if prediction_only.iloc[-1]['yhat'] > prediction_only.iloc[0]['yhat'] else 'downward'
+
+        explanations = []
+
+        holidays = holidays_df if not holidays_df.empty else pd.DataFrame()
+        holiday_impact = False
+        holiday_names = []
+
+        if not holidays.empty:
+            for _, holiday in holidays.iterrows():
+                holiday_date = pd.to_datetime(holiday['ds'])
+                if holiday_date in prediction_only['ds'].values:
+                    holiday_impact = True
+                    holiday_names.append(holiday['holiday'])
+
+        if holiday_impact:
+            explanations.append({
+                'factor': 'Holiday/Event Impact',
+                'description': f"Upcoming holidays ({', '.join(holiday_names)}) are factored into the forecast. These typically influence sales patterns.",
+                'icon': 'calendar'
+            })
+
+        recent_sales_df = product_sales_df.iloc[-30:] if len(product_sales_df) >= 30 else product_sales_df
+        if len(recent_sales_df) > 0:
+            recent_avg = recent_sales_df['y'].mean()
+            recent_trend_direction = 'increasing' if recent_sales_df['y'].iloc[-1] > recent_sales_df['y'].iloc[0] else 'decreasing'
+            explanations.append({
+                'factor': 'Recent Sales Trend',
+                'description': f"Based on the last 30 days, sales show a {recent_trend_direction} trend with average of {round(recent_avg)} units/day.",
+                'icon': 'trend'
+            })
+
+        if trend == 'upward':
+            explanations.append({
+                'factor': 'Demand Growth',
+                'description': f"The prediction shows an {trend} trend over the next {time_range} days, with average forecasted sales of {round(avg_predicted)} units/day.",
+                'icon': 'arrow-up'
+            })
+        else:
+            explanations.append({
+                'factor': 'Demand Decline',
+                'description': f"The prediction shows a {trend} trend over the next {time_range} days. Consider reviewing your promotion strategy.",
+                'icon': 'arrow-down'
+            })
+
+        volatility = forecast['yhat'].std()
+        if volatility > forecast['yhat'].mean() * 0.5:
+            explanations.append({
+                'factor': 'High Seasonality',
+                'description': 'This product exhibits strong weekly or seasonal patterns, making demand more variable.',
+                'icon': 'wave'
+            })
+        else:
+            explanations.append({
+                'factor': 'Stable Demand',
+                'description': 'This product has consistent, predictable demand patterns.',
+                'icon': 'check'
+            })
+
+        return jsonify({
+            'explanations': explanations,
+            'summary': f"{trend.capitalize()} trend with average forecast of {round(avg_predicted)} units/day over {time_range} days"
         })
 
     except Exception as e:
