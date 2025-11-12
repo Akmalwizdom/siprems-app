@@ -142,6 +142,83 @@ def delete_product(sku):
             return jsonify({'error': 'Tidak dapat menghapus produk, produk ini sudah memiliki riwayat transaksi.'}), 400
         return jsonify({'error': str(e)}), 500
 
+@app.route('/transactions', methods=['GET'])
+def get_transactions():
+    """
+    [READ] - Mengambil 100 transaksi terakhir.
+    Bergabung dengan tabel products untuk mendapatkan nama produk.
+    """
+    try:
+        query = """
+            SELECT 
+                t.transaction_id, 
+                t.transaction_date,
+                p.name as product_name, 
+                t.quantity_sold, 
+                t.price_per_unit
+            FROM transactions t
+            JOIN products p ON t.product_id = p.product_id
+            ORDER BY t.transaction_date DESC
+            LIMIT 100;
+        """
+        transactions = [dict(row) for row in db_query(query, fetch_all=True)]
+        # Konversi datetime ke string agar bisa di-JSON-kan
+        for t in transactions:
+            t['transaction_date'] = t['transaction_date'].isoformat()
+        return jsonify(transactions)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/transactions', methods=['POST'])
+def add_transaction():
+    """
+    [CREATE] - Menambah transaksi baru.
+    Ini juga akan mengurangi stok produk terkait.
+    """
+    try:
+        data = request.get_json()
+        
+        # 1. Dapatkan product_id dan harga dari 'sku' yang dikirim
+        product_query = "SELECT product_id, price, stock FROM products WHERE sku = %s;"
+        product = db_query(product_query, (data['product_sku'],), fetch_all=False)
+        
+        if not product:
+            return jsonify({'error': 'Product SKU not found'}), 404
+        
+        quantity_to_sell = int(data['quantity'])
+        
+        # 2. Cek apakah stok mencukupi
+        if product['stock'] < quantity_to_sell:
+            return jsonify({'error': f"Stok tidak mencukupi. Sisa stok: {product['stock']}"}), 400
+            
+        # 3. Masukkan ke tabel transactions
+        insert_query = """
+            INSERT INTO transactions (product_id, quantity_sold, price_per_unit, transaction_date)
+            VALUES (%s, %s, %s, %s)
+            RETURNING *;
+        """
+        params = (
+            product['product_id'],
+            quantity_to_sell,
+            product['price'],  # Gunakan harga dari database
+            datetime.datetime.now(datetime.timezone.utc)  # Selalu gunakan UTC
+        )
+        new_transaction = dict(db_query(insert_query, params, fetch_all=False))
+        new_transaction['transaction_date'] = new_transaction['transaction_date'].isoformat()
+        
+        # 4. Kurangi stok produk
+        stock_query = """
+            UPDATE products SET stock = stock - %s WHERE product_id = %s;
+        """
+        db_query(stock_query, (quantity_to_sell, product['product_id']), fetch_all=False)
+        
+        # Mengembalikan data transaksi yang baru saja dibuat
+        # Kita tambahkan 'product_name' secara manual untuk frontend
+        new_transaction['product_name'] = product['name'] 
+        
+        return jsonify(new_transaction), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # --- Menjalankan Server ---
 if __name__ == '__main__':
