@@ -4,14 +4,51 @@ from flask_cors import CORS
 from prophet import Prophet
 import os
 import psycopg2
-import psycopg2.extras  # <-- Import tambahan untuk RealDictCursor
+import psycopg2.extras 
 from dotenv import load_dotenv
 import numpy as np
 import datetime
 import random
+import google.generativeai as genai
 
 # --- Inisialisasi Aplikasi Flask & Database ---
 load_dotenv()  # Memuat variabel dari file .env
+# --- KONFIGURASI GEMINI AI ---
+try:
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    if not GEMINI_API_KEY:
+        print("PERINGATAN: GEMINI_API_KEY tidak ditemukan di .env. Endpoint /chat tidak akan berfungsi.")
+        model = None
+        chat = None
+    else:
+        genai.configure(api_key=GEMINI_API_KEY)
+        
+        # Definisikan instruksi sistem dan konfigurasi
+        system_instruction = (
+            "Anda adalah StockPredict AI, asisten inventaris AI yang ramah dan membantu. "
+            "Tugas Anda adalah menjawab pertanyaan pengguna tentang data inventaris, "
+            "prediksi stok, dan tren penjualan. Gunakan bahasa yang jelas dan profesional. "
+            "Jangan menjawab pertanyaan di luar topik manajemen inventaris."
+        )
+        
+        generation_config = genai.GenerationConfig(temperature=0.7)
+        
+        # Masukkan konfigurasi dan instruksi saat membuat model
+        model = genai.GenerativeModel(
+            'gemini-2.5-flash',
+            generation_config=generation_config,
+            system_instruction=system_instruction
+        )
+        
+        # Mulai chat hanya dengan riwayat kosong
+        chat = model.start_chat(history=[]) 
+        
+        print("Model Gemini AI berhasil dikonfigurasi.")
+except Exception as e:
+    print(f"Error saat mengkonfigurasi Gemini AI: {e}")
+    model = None
+    chat = None
+# --- AKHIR KONFIGURASI GEMINI ---
 
 app = Flask(__name__)
 CORS(app)  # Mengizinkan frontend di localhost:3000 untuk mengakses
@@ -342,6 +379,114 @@ def delete_event(event_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# --- FUNGSI HELPER UNTUK PREDIKSI PROPHET ---
+
+def get_sales_data_from_db(product_sku):
+    """
+    Mengambil data penjualan historis untuk SKU tertentu dari tabel 'transactions'.
+    Data diagregasi per hari (ds) dan jumlah penjualan (y) sesuai format Prophet.
+    """
+    try:
+        query = """
+            SELECT 
+                DATE(t.transaction_date) as ds,
+                SUM(t.quantity_sold) as y
+            FROM transactions t
+            JOIN products p ON t.product_id = p.product_id
+            WHERE p.sku = %s
+            GROUP BY DATE(t.transaction_date)
+            ORDER BY ds ASC;
+        """
+        # db_query akan mengembalikan list of dicts
+        data = db_query(query, (product_sku,), fetch_all=True)
+        
+        # Konversi ke DataFrame Pandas
+        df = pd.DataFrame(data)
+        
+        # Pastikan kolom 'y' adalah numerik dan 'ds' adalah datetime
+        if not df.empty:
+            # Konversi kolom 'ds' (yang mungkin bertipe object/date) ke datetime64[ns]
+            df['ds'] = pd.to_datetime(df['ds'])
+            df['y'] = pd.to_numeric(df['y'])
+        
+        return df
+        
+    except Exception as e:
+        print(f"Error saat mengambil data penjualan: {e}")
+        return pd.DataFrame() 
+
+def get_holidays_from_db():
+    """
+    Mengambil data hari libur dan acara kustom dari tabel 'events'
+    untuk digunakan oleh model Prophet.
+    """
+    try:
+        query = """
+            SELECT 
+                event_name as holiday, 
+                event_date as ds 
+            FROM events
+            WHERE include_in_prediction = TRUE;
+        """
+        data = db_query(query, fetch_all=True)
+        
+        # Konversi ke DataFrame Pandas
+        df = pd.DataFrame(data)
+        
+        # Pastikan 'ds' adalah datetime
+        if not df.empty:
+            df['ds'] = pd.to_datetime(df['ds'])
+            
+        return df
+        
+    except Exception as e:
+        print(f"Error saat mengambil data hari libur: {e}")
+        return pd.DataFrame() # Kembalikan DataFrame kosong jika error
+
+def get_current_stock_from_db(product_sku):
+    """
+    Mengambil informasi nama dan stok produk saat ini berdasarkan SKU.
+    """
+    try:
+        query = "SELECT name, stock FROM products WHERE sku = %s;"
+        # fetch_all=False akan mengembalikan satu dict
+        product_info = db_query(query, (product_sku,), fetch_all=False)
+        
+        if not product_info:
+            raise Exception(f"Info produk tidak ditemukan untuk SKU: {product_sku}")
+            
+        # Konversi dari RealDictRow ke dict standar
+        return dict(product_info)
+        
+    except Exception as e:
+        print(f"Error saat mengambil info stok: {e}")
+        return None
+
+def run_prediction(product_sales_df, holidays_df, days_to_forecast=7):
+    """
+    Menjalankan model Prophet AI untuk memprediksi penjualan.
+    """
+    # Inisialisasi model dengan musiman (seasonality)
+    model = Prophet(
+        holidays=holidays_df if not holidays_df.empty else None,
+        daily_seasonality=False,
+        weekly_seasonality=True,  # Menangkap tren mingguan (misal: weekend vs weekday)
+        yearly_seasonality=True,  # Menangkap tren tahunan (misal: liburan akhir tahun)
+        changepoint_prior_scale=0.05
+    )
+    
+    # Masukkan data penjualan ke model
+    model.fit(product_sales_df)
+    
+    # Buat kerangka data (DataFrame) untuk 7 hari ke depan
+    future = model.make_future_dataframe(periods=days_to_forecast)
+    
+    # Lakukan prediksi
+    forecast = model.predict(future)
+    
+    return forecast
+
+# --- ENDPOINT PREDIKSI ---
 @app.route('/predict', methods=['POST'])
 def predict_stock():
     """
@@ -432,41 +577,30 @@ def predict_stock():
 @app.route('/chat', methods=['POST'])
 def chat_with_ai():
     """
-    [CREATE] - Mensimulasikan respons AI Chatbot.
-    Ini mengambil data dummy dari frontend dan memindahkannya ke backend.
+    [CREATE] - Meneruskan pesan ke Gemini AI dan mengembalikan responsnya.
     """
+    # Periksa apakah model gagal diinisialisasi saat startup
+    if not model or not chat:
+        return jsonify({'error': 'Model Gemini AI tidak terkonfigurasi dengan benar di server.'}), 503 # Service Unavailable
+
     try:
         data = request.get_json()
-        user_message = data.get('message', '').lower()
+        user_message = data.get('message', '').strip()
 
-        # Pindahkan array respons dari frontend ke backend
-        ai_responses = [
-            "Permintaan Produk Laptop (LAP-001) meningkat karena tren liburan musiman. Berdasarkan data historis, kami biasanya melihat peningkatan 20-30% pada bulan November dan Desember.",
-            "Produk Monitor (MON-001) menunjukkan tingkat stok rendah (hanya 5 unit). Model prediksi menyarankan restock segera untuk menghindari kehabisan stok.",
-            "Model Prophet AI menggunakan data penjualan historis, pola musiman (mingguan/tahunan), dan data liburan (dari kalender) untuk memperkirakan permintaan di masa depan.",
-            "Data penjualan Anda menunjukkan kinerja yang kuat pada akhir pekan (Jumat-Sabtu). Pertimbangkan untuk menambah stok pada hari-hari tersebut.",
-            "Berdasarkan interval kepercayaan prediksi, produk Mouse (MOU-001) memiliki permintaan yang stabil dengan varians rendah. Ini menjadikannya produk yang mudah direncanakan.",
-        ]
+        if not user_message:
+            return jsonify({'error': 'Pesan tidak boleh kosong.'}), 400
         
-        # Logika AI "palsu" berbasis kata kunci
-        if "laptop" in user_message or "lap-001" in user_message:
-            response_content = ai_responses[0]
-        elif "monitor" in user_message or "mon-001" in user_message:
-            response_content = ai_responses[1]
-        elif "prophet" in user_message or "model" in user_message:
-            response_content = ai_responses[2]
-        elif "kapan" in user_message or "restock" in user_message:
-            response_content = ai_responses[1]
-        elif "penjualan" in user_message or "tren" in user_message:
-            response_content = ai_responses[3]
-        else:
-            # Jika tidak ada kata kunci yang cocok, pilih respons acak
-            response_content = random.choice(ai_responses)
-
-        return jsonify({'role': 'assistant', 'content': response_content})
+        # Kirim pesan ke Gemini
+        # 'chat.send_message' akan mengingat riwayat percakapan sebelumnya
+        response = chat.send_message(user_message)
+        
+        # Kembalikan respons teks murni dari model
+        return jsonify({'role': 'assistant', 'content': response.text})
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # Tangani error jika API call gagal
+        print(f"Error saat memanggil Gemini API: {e}")
+        return jsonify({'error': f'Terjadi masalah saat menghubungi AI: {str(e)}'}), 500
 
 @app.route('/settings/status', methods=['GET'])
 def get_system_status():
