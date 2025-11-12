@@ -220,6 +220,74 @@ def add_transaction():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/dashboard-stats', methods=['GET'])
+def get_dashboard_stats():
+    """
+    [READ] - Mengambil data statistik agregat untuk kartu dan grafik di dasbor.
+    """
+    try:
+        # 1. Statistik Kartu
+        # Kita gabungkan 3 query count menjadi satu untuk efisiensi
+        query_cards = """
+            SELECT
+                (SELECT COUNT(*) FROM transactions 
+                 WHERE DATE(transaction_date) = CURRENT_DATE) as daily_transactions,
+                
+                (SELECT COUNT(*) FROM products) as active_products,
+                
+                (SELECT COUNT(*) FROM products WHERE stock <= 5) as low_stock_items;
+        """
+        cards_data = db_query(query_cards, fetch_all=False)
+        
+        # 2. Tren Penjualan 7 Hari (Line Chart)
+        # Kita gunakan generate_series untuk memastikan ada data 7 hari, 
+        # walaupun tidak ada penjualan (sales = 0).
+        query_sales_trend = """
+            SELECT 
+                DATE(gs.day) as date,
+                COALESCE(SUM(t.quantity_sold), 0) as sales
+            FROM 
+                generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') as gs(day)
+            LEFT JOIN 
+                transactions t ON DATE(t.transaction_date) = gs.day
+            GROUP BY 
+                gs.day
+            ORDER BY 
+                gs.day;
+        """
+        sales_trend_raw = db_query(query_sales_trend, fetch_all=True)
+        # Format data untuk Recharts (['Mon', 'Tue', ...])
+        formatted_sales_trend = [
+            {'date': r['date'].strftime('%a'), 'sales': int(r['sales'])} 
+            for r in sales_trend_raw
+        ]
+        
+        # 3. Perbandingan Stok (Bar Chart)
+        # Ambil 5 produk dengan stok terendah
+        query_stock_comp = """
+            SELECT 
+                name as product, 
+                stock as current,
+                -- Kita buat logika "optimal" dummy di sini, misal 2x lipat stok rendah
+                CASE
+                    WHEN stock < 20 THEN 40
+                    ELSE stock + 20
+                END as optimal
+            FROM products
+            ORDER BY stock ASC
+            LIMIT 5;
+        """
+        stock_comparison = [dict(row) for row in db_query(query_stock_comp, fetch_all=True)]
+
+        # Gabungkan semua data menjadi satu respons JSON
+        return jsonify({
+            'cards': dict(cards_data),
+            'salesTrend': formatted_sales_trend,
+            'stockComparison': stock_comparison
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 # --- Menjalankan Server ---
 if __name__ == '__main__':
     # 'port=5000' adalah port standar untuk backend Flask
