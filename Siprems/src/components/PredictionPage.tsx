@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TrendingUp, Loader2, CheckCircle, AlertTriangle, ArrowUp, ArrowDown, Download, Eye, EyeOff, Calendar } from 'lucide-react';
+import { TrendingUp, Loader2, CheckCircle, AlertTriangle, ArrowUp, ArrowDown, Package } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import {
@@ -25,9 +25,10 @@ import {
 } from './ui/table';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
-import { Skeleton } from './ui/skeleton';
-import jsPDF from 'jspdf';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Label } from './ui/label';
 
+// Tipe data untuk hasil API
 interface ChartData {
   date: string;
   actual: number | null;
@@ -45,15 +46,11 @@ interface RecommendationData {
   urgency: 'high' | 'medium' | 'low';
 }
 
-interface ExplanationData {
-  factor: string;
-  description: string;
-  icon: string;
-}
-
-interface PredictionExplanation {
-  explanations: ExplanationData[];
-  summary: string;
+// Tipe data Produk (untuk dropdown)
+interface Product {
+  product_id: number;
+  name: string;
+  sku: string;
 }
 
 const API_URL = 'http://localhost:5000';
@@ -62,75 +59,81 @@ export default function PredictionPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<7 | 30 | 90>(7);
-  const [showConfidenceIntervals, setShowConfidenceIntervals] = useState(true);
-  const [explanations, setExplanations] = useState<PredictionExplanation | null>(null);
-  const [isLoadingExplanations, setIsLoadingExplanations] = useState(false);
 
+  // State untuk data dari API
   const [predictionData, setPredictionData] = useState<ChartData[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendationData[]>([]);
+  
+  // State baru untuk dropdown produk
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedSku, setSelectedSku] = useState<string>("");
 
-  const getTimeRangeLabel = (range: number) => {
-    if (range === 7) return '7 Days';
-    if (range === 30) return '30 Days';
-    if (range === 90) return '90 Days';
-    return '';
-  };
-
-  const fetchExplanations = async (range: number) => {
-    setIsLoadingExplanations(true);
-    try {
-      const response = await fetch(`${API_URL}/predict/explain`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product_sku: 'LAP-001',
-          time_range: range,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setExplanations(data);
+  // Ambil daftar produk untuk dropdown saat halaman dimuat
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await fetch(`${API_URL}/products`);
+        if (!response.ok) throw new Error('Failed to fetch products');
+        const data: Product[] = await response.json();
+        setProducts(data);
+        // Set produk pertama sebagai default jika ada
+        if (data.length > 0) {
+          setSelectedSku(data[0].sku);
+        }
+      } catch (err) {
+        console.error(err);
+        setApiError(err instanceof Error ? err.message : 'Failed to load products');
       }
-    } catch (error) {
-      console.error('Failed to fetch explanations:', error);
-    } finally {
-      setIsLoadingExplanations(false);
-    }
-  };
+    };
+    fetchProducts();
+  }, []);
+
 
   const handleRunPrediction = async () => {
+    if (!selectedSku) {
+      toast.error("Please select a product to predict.");
+      return;
+    }
+
     setIsRunning(true);
     setShowResults(false);
     setApiError(null);
-    setExplanations(null);
 
     try {
       const response = await fetch(`${API_URL}/predict`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product_sku: 'LAP-001',
-          time_range: timeRange,
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ product_sku: selectedSku }) // Kirim SKU yang dipilih
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
 
       const data = await response.json();
 
-      if (data.error) {
-        throw new Error(data.error);
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
 
-      setPredictionData(data.chartData);
-      setRecommendations(data.recommendations);
+      // --- PERBAIKAN PENTING ---
+      // Konversi semua string angka dari JSON menjadi number
+      const cleanChartData: ChartData[] = data.chartData.map((d: any) => ({
+        ...d,
+        actual: d.actual ? parseFloat(String(d.actual)) : null,
+        predicted: parseFloat(String(d.predicted)),
+        lower: parseFloat(String(d.lower)),
+        upper: parseFloat(String(d.upper)),
+      }));
+
+      const cleanRecData: RecommendationData[] = data.recommendations.map((r: any) => ({
+        ...r,
+        current: parseInt(String(r.current), 10),
+        optimal: parseInt(String(r.optimal), 10),
+      }));
+
+      setPredictionData(cleanChartData);
+      setRecommendations(cleanRecData);
       setShowResults(true);
 
-      await fetchExplanations(timeRange);
     } catch (error) {
       console.error('Failed to run prediction:', error);
       if (error instanceof Error) {
@@ -142,154 +145,6 @@ export default function PredictionPage() {
       setIsRunning(false);
     }
   };
-
-  const downloadCSV = useCallback(() => {
-    if (predictionData.length === 0) return;
-
-    const headers = ['Date', 'Actual Sales', 'Predicted Sales', 'Lower Bound', 'Upper Bound'];
-    const rows = predictionData.map((row) => [
-      row.date,
-      row.actual || '',
-      row.predicted,
-      row.lower,
-      row.upper,
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((row) => row.join(',')),
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `prediction-report-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  }, [predictionData]);
-
-  const downloadPDF = useCallback(() => {
-    if (predictionData.length === 0) return;
-
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 15;
-    let yPosition = margin;
-
-    doc.setFontSize(16);
-    doc.setFont(undefined, 'bold');
-    doc.text('Stock Prediction Report', margin, yPosition);
-    yPosition += 10;
-
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    doc.text(`Generated: ${new Date().toLocaleString()}`, margin, yPosition);
-    yPosition += 7;
-    doc.text(`Time Range: ${getTimeRangeLabel(timeRange)}`, margin, yPosition);
-    yPosition += 12;
-
-    if (recommendations.length > 0) {
-      const rec = recommendations[0];
-      doc.setFont(undefined, 'bold');
-      doc.text('Recommendations:', margin, yPosition);
-      yPosition += 7;
-
-      doc.setFont(undefined, 'normal');
-      doc.text(`Product: ${rec.product}`, margin + 5, yPosition);
-      yPosition += 5;
-      doc.text(`Current Stock: ${rec.current} units`, margin + 5, yPosition);
-      yPosition += 5;
-      doc.text(`Optimal Stock: ${rec.optimal} units`, margin + 5, yPosition);
-      yPosition += 5;
-      doc.text(`Suggestion: ${rec.suggestion}`, margin + 5, yPosition);
-      yPosition += 5;
-      doc.text(`Trend: ${rec.trend === 'up' ? 'Upward' : 'Downward'}`, margin + 5, yPosition);
-      yPosition += 5;
-      doc.text(`Priority: ${rec.urgency.toUpperCase()}`, margin + 5, yPosition);
-      yPosition += 12;
-    }
-
-    doc.setFont(undefined, 'bold');
-    doc.text('Prediction Data:', margin, yPosition);
-    yPosition += 7;
-
-    doc.setFont(undefined, 'normal');
-    doc.setFontSize(9);
-
-    const tableData = predictionData.map((row) => [
-      row.date,
-      row.actual || '-',
-      row.predicted.toString(),
-      row.lower.toString(),
-      row.upper.toString(),
-    ]);
-
-    const tableHeaders = ['Date', 'Actual', 'Predicted', 'Lower', 'Upper'];
-
-    const cellWidth = (pageWidth - 2 * margin) / tableHeaders.length;
-    const cellHeight = 6;
-
-    tableHeaders.forEach((header, index) => {
-      doc.setFont(undefined, 'bold');
-      doc.text(header, margin + index * cellWidth + 1, yPosition, { maxWidth: cellWidth - 2 });
-    });
-    yPosition += cellHeight;
-
-    doc.setFont(undefined, 'normal');
-    tableData.forEach((row) => {
-      if (yPosition + cellHeight > pageHeight - margin) {
-        doc.addPage();
-        yPosition = margin;
-      }
-      row.forEach((cell, index) => {
-        doc.text(cell, margin + index * cellWidth + 1, yPosition, { maxWidth: cellWidth - 2 });
-      });
-      yPosition += cellHeight;
-    });
-
-    if (explanations) {
-      doc.addPage();
-      yPosition = margin;
-
-      doc.setFontSize(14);
-      doc.setFont(undefined, 'bold');
-      doc.text('Trend Analysis', margin, yPosition);
-      yPosition += 10;
-
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
-      doc.text(`Summary: ${explanations.summary}`, margin, yPosition, { maxWidth: pageWidth - 2 * margin });
-      yPosition += 15;
-
-      doc.setFont(undefined, 'bold');
-      doc.text('Key Factors:', margin, yPosition);
-      yPosition += 7;
-
-      doc.setFontSize(9);
-      doc.setFont(undefined, 'normal');
-      explanations.explanations.forEach((explanation) => {
-        const wrappedText = doc.splitTextToSize(
-          `• ${explanation.factor}: ${explanation.description}`,
-          pageWidth - 2 * margin - 5
-        );
-        wrappedText.forEach((line: string) => {
-          if (yPosition + 5 > pageHeight - margin) {
-            doc.addPage();
-            yPosition = margin;
-          }
-          doc.text(line, margin + 5, yPosition);
-          yPosition += 5;
-        });
-        yPosition += 2;
-      });
-    }
-
-    doc.save(`prediction-report-${new Date().toISOString().split('T')[0]}.pdf`);
-  }, [predictionData, recommendations, explanations, timeRange]);
 
   return (
     <motion.div
@@ -307,68 +162,79 @@ export default function PredictionPage() {
       {/* Run Prediction Section */}
       <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
         <CardContent className="pt-6">
-          <div className="text-center space-y-6">
-            <div className="bg-blue-50 dark:bg-blue-900/30 rounded-full w-20 h-20 flex items-center justify-center mx-auto">
+          <div className="flex flex-col md:flex-row items-center justify-center gap-8">
+            <div className="flex-shrink-0 bg-blue-50 dark:bg-blue-900/30 rounded-full w-20 h-20 flex items-center justify-center mx-auto">
               <TrendingUp className="w-10 h-10 text-blue-500" />
             </div>
-            <div>
+            
+            <div className="flex-1 w-full text-center md:text-left">
               <h2 className="text-gray-900 dark:text-white mb-2">Prophet AI Model</h2>
-              <p className="text-gray-600 dark:text-gray-400">
-                Select a time range and click the button below to run stock predictions based on historical data
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                Select a product and click the button to run stock predictions.
               </p>
+              
+              <div className="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-4">
+                {/* --- DROPDOWN PRODUK BARU --- */}
+                <div className="space-y-2 w-full sm:w-64">
+                  <Label htmlFor="product-select" className="sr-only">Select Product</Label>
+                  <Select value={selectedSku} onValueChange={setSelectedSku}>
+                    <SelectTrigger id="product-select" className="rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-4 h-4 text-gray-500" />
+                        <SelectValue placeholder="Select a product" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {products.length > 0 ? (
+                        products.map((product) => (
+                          <SelectItem key={product.sku} value={product.sku}>
+                            {product.name} ({product.sku})
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="" disabled>Loading products...</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* --- Tombol Run Prediction --- */}
+                <AnimatePresence mode="wait">
+                  {!isRunning && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <Button
+                        size="lg"
+                        onClick={handleRunPrediction}
+                        disabled={!selectedSku}
+                        className="rounded-xl bg-blue-500 hover:bg-blue-600 hover:text-cyan-100 w-full sm:w-auto"
+                      >
+                        <TrendingUp className="w-5 h-5 mr-2" />
+                        Run Stock Prediction
+                      </Button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
-            {/* Time Range Selector */}
-            <div className="flex justify-center gap-3">
-              {[7, 30, 90].map((range) => (
-                <Button
-                  key={range}
-                  variant={timeRange === range ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => {
-                    setTimeRange(range as 7 | 30 | 90);
-                    setShowResults(false);
-                    setExplanations(null);
-                  }}
-                  disabled={isRunning || showResults}
-                  className="rounded-lg"
-                >
-                  <Calendar className="w-4 h-4 mr-2" />
-                  {getTimeRangeLabel(range)}
-                </Button>
-              ))}
-            </div>
-
+            {/* --- INDIKATOR LOADING & SUKSES --- */}
             <AnimatePresence mode="wait">
-              {!isRunning && !showResults && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  <Button
-                    size="lg"
-                    onClick={handleRunPrediction}
-                    className="rounded-xl bg-blue-500 hover:bg-blue-600 hover:text-cyan-100"
-                  >
-                    <TrendingUp className="w-5 h-5 mr-2" />
-                    Run Stock Prediction
-                  </Button>
-                </motion.div>
-              )}
-
               {isRunning && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  className="space-y-4"
+                  className="space-y-4 text-center w-48"
                 >
                   <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto" />
                   <div>
-                    <p className="text-gray-900 dark:text-white">Running Prophet AI model...</p>
+                    <p className="text-gray-900 dark:text-white">Running model...</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      Analyzing historical data and seasonal patterns for {getTimeRangeLabel(timeRange).toLowerCase()}
+                      Analyzing data...
                     </p>
                   </div>
                 </motion.div>
@@ -378,7 +244,7 @@ export default function PredictionPage() {
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="space-y-4"
+                  className="space-y-4 text-center w-48"
                 >
                   <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
                   <div>
@@ -388,21 +254,24 @@ export default function PredictionPage() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {apiError && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="pt-4"
-              >
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Prediction Failed</AlertTitle>
-                  <AlertDescription>{apiError}</AlertDescription>
-                </Alert>
-              </motion.div>
-            )}
           </div>
+
+          {/* Tampilkan Pesan Error API */}
+          {apiError && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="pt-4 mt-4"
+            >
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Prediction Failed</AlertTitle>
+                <AlertDescription>
+                  {apiError}
+                </AlertDescription>
+              </Alert>
+            </motion.div>
+          )}
         </CardContent>
       </Card>
 
@@ -417,143 +286,65 @@ export default function PredictionPage() {
               transition={{ duration: 0.5 }}
             >
               <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="text-gray-900 dark:text-white">Prediction Results</CardTitle>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {getTimeRangeLabel(timeRange)} forecast with confidence intervals
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowConfidenceIntervals(!showConfidenceIntervals)}
-                    className="rounded-lg"
-                  >
-                    {showConfidenceIntervals ? (
-                      <>
-                        <Eye className="w-4 h-4 mr-2" />
-                        Hide Intervals
-                      </>
-                    ) : (
-                      <>
-                        <EyeOff className="w-4 h-4 mr-2" />
-                        Show Intervals
-                      </>
-                    )}
-                  </Button>
+                <CardHeader>
+                  <CardTitle className="text-gray-900 dark:text-white">
+                    Prediction Results for <span className="text-blue-500">{recommendations[0]?.product || ''}</span>
+                  </CardTitle>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    7-day forecast with confidence intervals
+                  </p>
                 </CardHeader>
                 <CardContent>
-                  {predictionData.length === 0 ? (
-                    <div className="h-[400px] space-y-4">
-                      <Skeleton className="h-full w-full rounded-lg" />
-                    </div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height={400}>
-                      <ComposedChart data={predictionData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="date" stroke="#888" />
-                        <YAxis stroke="#888" />
-                        <Tooltip />
-                        <Legend />
-                        {showConfidenceIntervals && (
-                          <>
-                            <Area
-                              type="monotone"
-                              dataKey="upper"
-                              fill="#DBEAFE"
-                              stroke="none"
-                              fillOpacity={0.6}
-                              name="Confidence Upper"
-                            />
-                            <Area
-                              type="monotone"
-                              dataKey="lower"
-                              fill="#ffffff"
-                              stroke="none"
-                              fillOpacity={1}
-                              name="Confidence Lower"
-                            />
-                          </>
-                        )}
-                        <Line
-                          type="monotone"
-                          dataKey="actual"
-                          stroke="#6B7280"
-                          strokeWidth={2}
-                          dot={{ fill: '#6B7280', r: 4 }}
-                          name="Actual Sales"
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="predicted"
-                          stroke="#3B82F6"
-                          strokeWidth={3}
-                          dot={{ fill: '#3B82F6', r: 5 }}
-                          name="Predicted Sales"
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  )}
+                  <ResponsiveContainer width="100%" height={400}>
+                    <ComposedChart data={predictionData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="date" stroke="#888" />
+                      <YAxis stroke="#888" />
+                      <Tooltip />
+                      <Legend />
+                      <Area
+                        type="monotone"
+                        dataKey="upper"
+                        fill="#DBEAFE"
+                        stroke="none"
+                        fillOpacity={0.6}
+                        name="Confidence Upper"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="lower"
+                        fill="#ffffff"
+                        stroke="none"
+                        fillOpacity={1}
+                        name="Confidence Lower"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="actual"
+                        stroke="#6B7280"
+                        strokeWidth={2}
+                        dot={{ fill: '#6B7280', r: 4 }}
+                        name="Actual Sales"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="predicted"
+                        stroke="#3B82F6"
+                        strokeWidth={3}
+                        dot={{ fill: '#3B82F6', r: 5 }}
+                        name="Predicted Sales"
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
                 </CardContent>
               </Card>
             </motion.div>
-
-            {/* Trend Explanation Panel */}
-            {isLoadingExplanations ? (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-              >
-                <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-gray-900 dark:text-white">Trend Analysis</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <Skeleton className="h-20 rounded-lg" />
-                    <Skeleton className="h-20 rounded-lg" />
-                    <Skeleton className="h-20 rounded-lg" />
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ) : explanations ? (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-              >
-                <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-gray-900 dark:text-white">Trend Analysis</CardTitle>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">{explanations.summary}</p>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {explanations.explanations.map((explanation, index) => (
-                        <div
-                          key={index}
-                          className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600"
-                        >
-                          <h4 className="font-semibold text-gray-900 dark:text-white mb-2">
-                            {explanation.factor}
-                          </h4>
-                          <p className="text-sm text-gray-600 dark:text-gray-300">
-                            {explanation.description}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ) : null}
 
             {/* Recommendations Table */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
             >
               <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
                 <CardHeader>
@@ -606,40 +397,6 @@ export default function PredictionPage() {
                       ))}
                     </TableBody>
                   </Table>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Download Reports Section */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-            >
-              <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-gray-900 dark:text-white">Download Reports</CardTitle>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Export prediction data and analysis for further review or sharing
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <Button
-                      onClick={downloadCSV}
-                      className="rounded-xl bg-green-600 hover:bg-green-700"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Download CSV
-                    </Button>
-                    <Button
-                      onClick={downloadPDF}
-                      className="rounded-xl bg-red-600 hover:bg-red-700"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Download PDF Report
-                    </Button>
-                  </div>
                 </CardContent>
               </Card>
             </motion.div>

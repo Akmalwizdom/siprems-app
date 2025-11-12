@@ -288,6 +288,145 @@ def get_dashboard_stats():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+@app.route('/events', methods=['GET'])
+def get_events():
+    """
+    [READ] - Mengambil semua event kalender (holidays & custom).
+    """
+    try:
+        query = "SELECT * FROM events ORDER BY event_date DESC;"
+        events = [dict(row) for row in db_query(query, fetch_all=True)]
+        # Konversi date object ke string ISO (YYYY-MM-DD)
+        for e in events:
+            e['event_date'] = e['event_date'].isoformat()
+        return jsonify(events)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/events', methods=['POST'])
+def add_event():
+    """
+    [CREATE] - Menambah event kustom baru.
+    """
+    try:
+        data = request.get_json()
+        query = """
+            INSERT INTO events (event_name, event_date, type, description, include_in_prediction)
+            VALUES (%s, %s, 'custom', %s, %s)
+            RETURNING *;
+        """
+        params = (
+            data['name'], data['date'], data.get('description'), data['includeInPrediction']
+        )
+        new_event = dict(db_query(query, params, fetch_all=False))
+        new_event['event_date'] = new_event['event_date'].isoformat()
+        return jsonify(new_event), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/events/<int:event_id>', methods=['DELETE'])
+def delete_event(event_id):
+    """
+    [DELETE] - Menghapus event kustom (bukan 'holiday').
+    """
+    try:
+        # Pastikan hanya event 'custom' yang bisa dihapus
+        query = "DELETE FROM events WHERE event_id = %s AND type = 'custom' RETURNING *;"
+        deleted_event = db_query(query, (event_id,), fetch_all=False)
+        if deleted_event:
+            return jsonify({'message': 'Event deleted successfully'})
+        # Jika tidak ada yang terhapus (karena ID tidak ada atau tipenya 'holiday')
+        return jsonify({'error': 'Event not found or is a national holiday (cannot be deleted)'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/predict', methods=['POST'])
+def predict_stock():
+    """
+    [UPDATE] - Menjalankan prediksi Prophet untuk SKU produk tertentu.
+    """
+    try:
+        # --- PERUBAHAN DI SINI ---
+        # Ambil SKU dari JSON body yang dikirim frontend
+        data = request.get_json()
+        if not data or 'product_sku' not in data:
+            return jsonify({'error': 'Product SKU is required.'}), 400
+            
+        product_sku_to_predict = data['product_sku']
+        # --- BATAS PERUBAHAN ---
+
+        
+        # --- (Tahap 1 dari Flowchart - Mengambil data dari DB) ---
+        product_sales_df = get_sales_data_from_db(product_sku_to_predict)
+        holidays_df = get_holidays_from_db()
+        product_info = get_current_stock_from_db(product_sku_to_predict)
+        
+        if product_sales_df.empty or len(product_sales_df) < 2:
+            return jsonify({'error': f'Not enough sales data for {product_info.get("name", product_sku_to_predict)} to predict.'}), 400
+
+        # --- (Tahap 2 dari Flowchart - Menjalankan Model AI) ---
+        forecast = run_prediction(product_sales_df, holidays_df, days_to_forecast=7)
+        
+        # --- (Tahap 3 dari Flowchart: Memformat Hasil Sesuai Frontend) ---
+        
+        # 1. Menyiapkan Data untuk Grafik (Chart Data)
+        actual_data = product_sales_df.rename(columns={'y': 'actual'})
+        forecast_with_actual = forecast.merge(actual_data, on='ds', how='left')
+        chart_data_raw = forecast_with_actual.tail(12) # 5 hari histori + 7 hari prediksi
+        
+        chart_data = []
+        for _, row in chart_data_raw.iterrows():
+            chart_data.append({
+                'date': row['ds'].strftime('%Y-%m-%d'),
+                'actual': round(row['actual']) if pd.notna(row['actual']) else None,
+                # Pastikan prediksi tidak negatif
+                'predicted': max(0, round(row['yhat'])),
+                'lower': max(0, round(row['yhat_lower'])),
+                'upper': max(0, round(row['yhat_upper']))
+            })
+
+        # 2. Menyiapkan Data untuk Rekomendasi (Recommendations Table)
+        prediction_only = forecast.iloc[-7:]
+        # Pastikan total prediksi tidak negatif
+        total_predicted_sales = max(0, prediction_only['yhat'].sum())
+        
+        safety_stock_factor = 1.20 
+        optimal_stock = round(total_predicted_sales * safety_stock_factor)
+        
+        current_product_stock = product_info['stock']
+        suggestion_amount = optimal_stock - current_product_stock
+        
+        if suggestion_amount <= 0:
+            suggestion_text = "Stok Cukup"
+            urgency = "low"
+            # Jika stok berlebih (lebih dari 50% di atas optimal)
+            if current_product_stock > optimal_stock * 1.5:
+                 suggestion_text = "Stok Berlebih"
+                 urgency = "low"
+        else:
+            suggestion_text = f"Restock +{suggestion_amount} unit"
+            urgency = "high" if suggestion_amount > current_product_stock * 0.75 else "medium"
+
+        recommendations = [
+            {
+                'product': product_info['name'],
+                'current': current_product_stock,
+                'optimal': optimal_stock,
+                'trend': 'up' if prediction_only.iloc[-1]['yhat'] > prediction_only.iloc[0]['yhat'] else 'down',
+                'suggestion': suggestion_text,
+                'urgency': urgency
+            }
+            # Di aplikasi nyata, Anda bisa mem-passing list of SKU dan me-looping ini
+        ]
+
+        return jsonify({
+            'chartData': chart_data,
+            'recommendations': recommendations
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500    
 # --- Menjalankan Server ---
 if __name__ == '__main__':
     # 'port=5000' adalah port standar untuk backend Flask
