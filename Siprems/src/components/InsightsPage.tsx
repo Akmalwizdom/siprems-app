@@ -1,26 +1,17 @@
-import { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Bot, Send, User, BarChart3, TrendingUp, Download, AlertCircle } from 'lucide-react';
-import jsPDF from 'jspdf';
+import { useState, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
+import { Bot, Send, User, Loader2 } from 'lucide-react'; // Import Loader2
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { toast } from 'sonner@2.0.3';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  chartData?: {
-    type: 'bar' | 'line';
-    data: any[];
-  };
   timestamp: Date;
-}
-
-interface ChartDataPoint {
-  [key: string]: string | number;
 }
 
 const initialMessages: Message[] = [
@@ -33,219 +24,87 @@ const initialMessages: Message[] = [
   },
 ];
 
-const quickActionButtons = [
-  'Show top-selling products',
-  'Forecast next month',
-  'Explain demand spike',
-  'When should I restock?',
-];
-
-function InlineChart({ chartData }: { chartData: { type: 'bar' | 'line'; data: ChartDataPoint[] } }) {
-  const height = 250;
-
-  if (chartData.type === 'bar') {
-    return (
-      <ResponsiveContainer width="100%" height={height}>
-        <BarChart data={chartData.data} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
-          <XAxis dataKey="name" stroke="rgba(0,0,0,0.6)" fontSize={12} />
-          <YAxis stroke="rgba(0,0,0,0.6)" fontSize={12} />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: '#fff',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-            }}
-          />
-          <Legend />
-          {chartData.data.length > 0 &&
-            Object.keys(chartData.data[0])
-              .filter((key) => key !== 'name' && key !== 'period')
-              .map((key) => (
-                <Bar
-                  key={key}
-                  dataKey={key}
-                  fill={key === 'sold' ? '#3b82f6' : key === 'revenue' ? '#8b5cf6' : '#10b981'}
-                  radius={[4, 4, 0, 0]}
-                />
-              ))}
-        </BarChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={chartData.data} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
-        <XAxis dataKey="day" stroke="rgba(0,0,0,0.6)" fontSize={12} />
-        <YAxis stroke="rgba(0,0,0,0.6)" fontSize={12} />
-        <Tooltip
-          contentStyle={{
-            backgroundColor: '#fff',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-          }}
-        />
-        <Legend />
-        <Line type="monotone" dataKey="forecast" stroke="#3b82f6" strokeWidth={2} dot={false} />
-        {chartData.data[0]?.lower && <Line type="monotone" dataKey="lower" stroke="#cbd5e1" strokeWidth={1} strokeDasharray="5 5" dot={false} />}
-        {chartData.data[0]?.upper && <Line type="monotone" dataKey="upper" stroke="#cbd5e1" strokeWidth={1} strokeDasharray="5 5" dot={false} />}
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
+const API_URL = 'http://localhost:5000';
 
 export default function InsightsPage() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [lastProduct, setLastProduct] = useState('LAP-001');
+  const [isLoading, setIsLoading] = useState(false); // State untuk loading
+  
+  // Ref untuk auto-scroll
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const extractProductSKU = (text: string): string | null => {
-    const skuPattern = /\b([A-Z]+-\d{3})\b/i;
-    const match = text.match(skuPattern);
-    return match ? match[1].toUpperCase() : null;
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
+    setIsLoading(true);
 
+    // 1. Tambahkan pesan pengguna
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: inputValue,
       timestamp: new Date(),
     };
-
     setMessages((prev) => [...prev, userMessage]);
     setInputValue('');
 
-    // Extract product SKU if mentioned
-    const mentionedSKU = extractProductSKU(inputValue);
-    if (mentionedSKU) {
-      setLastProduct(mentionedSKU);
-    }
-
-    setIsLoading(true);
-
+    // 2. Kirim ke backend dan tunggu respons
     try {
-      const response = await fetch('http://localhost:5000/api/chatbot/query', {
+      const response = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: inputValue,
-          lastProduct: lastProduct,
-        }),
+        body: JSON.stringify({ message: userMessage.content }),
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response from AI assistant');
+      }
 
       const data = await response.json();
 
-      if (data.error) {
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: `I encountered an error: ${data.error}. Please try again.`,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, errorMessage]);
-      } else {
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: data.response,
-          chartData: data.chartData,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, aiMessage]);
-
-        if (data.lastProduct) {
-          setLastProduct(data.lastProduct);
-        }
-      }
-    } catch (error) {
-      const errorMessage: Message = {
+      // 3. Tambahkan respons AI
+      const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Sorry, I could not connect to the server. Please check your connection and try again.',
+        content: data.content,
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, aiMessage]);
+
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error connecting to assistant');
+      // Jika error, tambahkan pesan error manual
+      setMessages((prev) => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Sorry, I am having trouble connecting to my brain right now.',
+        timestamp: new Date(),
+      }]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
+    if (e.key === 'Enter' && !isLoading) {
       handleSendMessage();
     }
   };
-
-  const handleQuickAction = (action: string) => {
-    setInputValue(action);
-  };
-
-  const exportConversationAsPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 15;
-    let yPosition = margin;
-
-    doc.setFontSize(16);
-    doc.text('AI Insights Assistant - Conversation Export', margin, yPosition);
-    yPosition += 15;
-
-    doc.setFontSize(10);
-    const timestamp = new Date().toLocaleString();
-    doc.text(`Exported: ${timestamp}`, margin, yPosition);
-    yPosition += 10;
-
-    doc.setDrawColor(200, 200, 200);
-    doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 10;
-
-    messages.forEach((message) => {
-      doc.setFontSize(11);
-      if (message.role === 'user') {
-        doc.setTextColor(0, 102, 204);
-      } else {
-        doc.setTextColor(50, 50, 50);
-      }
-      const role = message.role === 'user' ? 'You' : 'AI Assistant';
-      doc.text(`${role}:`, margin, yPosition);
-      yPosition += 6;
-
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(10);
-      const lines = doc.splitTextToSize(message.content, pageWidth - margin * 2);
-      doc.text(lines, margin + 5, yPosition);
-      yPosition += lines.length * 5 + 5;
-
-      const time = message.timestamp.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      doc.setTextColor(150, 150, 150);
-      doc.setFontSize(8);
-      doc.text(`${time}`, margin + 5, yPosition);
-      yPosition += 8;
-
-      if (yPosition > pageHeight - margin) {
-        doc.addPage();
-        yPosition = margin;
-      }
-    });
-
-    doc.save('conversation-export.pdf');
-  };
+  
+  // Fungsi untuk menangani quick question
+  const handleQuickQuestion = (question: string) => {
+    setInputValue(question);
+    // Langsung kirim
+    handleSendMessage();
+  }
 
   return (
     <motion.div
@@ -255,21 +114,11 @@ export default function InsightsPage() {
       className="space-y-6"
     >
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <h1 className="text-gray-900 dark:text-white mb-2">AI Insights Assistant</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Chat with our AI to understand predictions and get personalized recommendations
-          </p>
-        </div>
-        <Button
-          onClick={exportConversationAsPDF}
-          variant="outline"
-          className="rounded-xl flex items-center gap-2 whitespace-nowrap"
-        >
-          <Download className="w-4 h-4" />
-          <span className="hidden sm:inline">Export PDF</span>
-        </Button>
+      <div>
+        <h1 className="text-gray-900 dark:text-white mb-2">AI Insights Assistant</h1>
+        <p className="text-gray-600 dark:text-gray-400">
+          Chat with our AI to understand predictions and get personalized recommendations
+        </p>
       </div>
 
       {/* Chat Interface */}
@@ -282,7 +131,7 @@ export default function InsightsPage() {
             <div>
               <CardTitle className="text-gray-900 dark:text-white">StockPredict AI</CardTitle>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                {isLoading ? 'Processing...' : 'Online - Ready to help'}
+                {isLoading ? "Typing..." : "Online - Ready to help"}
               </p>
             </div>
           </div>
@@ -291,91 +140,77 @@ export default function InsightsPage() {
         <CardContent className="p-0">
           {/* Messages Area */}
           <div className="h-[500px] overflow-y-auto p-6 space-y-4">
-            <AnimatePresence>
-              {messages.map((message) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            {messages.map((message) => (
+              <motion.div
+                key={message.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`flex space-x-3 max-w-[80%] ${
+                    message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+                  }`}
                 >
+                  <Avatar className="w-8 h-8">
+                    <AvatarFallback
+                      className={
+                        message.role === 'user' ? 'bg-gray-200 text-gray-700' : 'bg-blue-500 text-white'
+                      }
+                    >
+                      {message.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                    </AvatarFallback>
+                  </Avatar>
+
                   <div
-                    className={`flex space-x-3 max-w-[85%] ${
-                      message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
+                    className={`rounded-2xl px-4 py-3 ${
+                      message.role === 'user'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
                     }`}
                   >
-                    <Avatar className="w-8 h-8 flex-shrink-0">
-                      <AvatarFallback
-                        className={
-                          message.role === 'user' ? 'bg-gray-200 text-gray-700' : 'bg-blue-500 text-white'
-                        }
-                      >
-                        {message.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-                      </AvatarFallback>
-                    </Avatar>
-
-                    <div className="flex flex-col gap-2">
-                      <div
-                        className={`rounded-2xl px-4 py-3 ${
-                          message.role === 'user'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                        }`}
-                      >
-                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                        <p
-                          className={`text-xs mt-1 ${
-                            message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
-                          }`}
-                        >
-                          {message.timestamp.toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      </div>
-
-                      {message.chartData && (
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.3 }}
-                          className="bg-white dark:bg-gray-700 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-600"
-                        >
-                          <InlineChart chartData={message.chartData} />
-                        </motion.div>
-                      )}
-                    </div>
+                    <p className="text-sm" style={{ whiteSpace: 'pre-wrap' }}>{message.content}</p>
+                    <p
+                      className={`text-xs mt-1 ${
+                        message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                      }`}
+                    >
+                      {message.timestamp.toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
                   </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                </div>
+              </motion.div>
+            ))}
+            {/* Indikator loading */}
             {isLoading && (
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
                 className="flex justify-start"
               >
-                <div className="flex space-x-3">
+                <div className="flex space-x-3 max-w-[80%]">
                   <Avatar className="w-8 h-8">
-                    <AvatarFallback className="bg-blue-500 text-white">
+                    <AvatarFallback className='bg-blue-500 text-white'>
                       <Bot className="w-4 h-4" />
                     </AvatarFallback>
                   </Avatar>
-                  <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl px-4 py-3 flex items-center gap-2">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce animation-delay-100" />
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce animation-delay-200" />
+                  <div className="rounded-2xl px-4 py-3 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white">
+                    <Loader2 className="w-5 h-5 animate-spin" />
                   </div>
                 </div>
               </motion.div>
             )}
+            {/* Element kosong untuk auto-scroll */}
             <div ref={messagesEndRef} />
           </div>
 
           {/* Input Area */}
-          <div className="border-t border-gray-200 dark:border-gray-700 p-4 space-y-4">
+          <div className="border-t border-gray-200 dark:border-gray-700 p-4">
             <div className="flex space-x-2">
               <Input
                 placeholder="Ask about predictions, trends, or recommendations..."
@@ -397,43 +232,34 @@ export default function InsightsPage() {
         </CardContent>
       </Card>
 
-      {/* Quick Action Buttons */}
+      {/* Quick Questions */}
       <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-gray-900 dark:text-white flex items-center gap-2">
-            <BarChart3 className="w-5 h-5" />
-            Quick Actions
-          </CardTitle>
+          <CardTitle className="text-gray-900 dark:text-white">Quick Questions</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {quickActionButtons.map((action, index) => (
+            {[
+              'Why is Laptop demand increasing?',
+              'When should I restock Monitor?',
+              'How does the Prophet model work?',
+              'What is my sales trend?',
+            ].map((question, index) => (
               <Button
                 key={index}
                 variant="outline"
-                onClick={() => handleQuickAction(action)}
-                disabled={isLoading}
-                className="rounded-xl text-left justify-start h-auto py-3 px-4 hover:bg-blue-50 dark:hover:bg-gray-700"
+                onClick={() => {
+                  setInputValue(question);
+                  // Kita set input, tapi biarkan user menekan 'send'
+                }}
+                className="rounded-xl text-left justify-start h-auto py-3 px-4"
               >
-                <TrendingUp className="w-4 h-4 mr-2 flex-shrink-0" />
-                <span className="text-sm">{action}</span>
+                <span className="text-sm">{question}</span>
               </Button>
             ))}
           </div>
         </CardContent>
       </Card>
-
-      {/* Context Info Card */}
-      {lastProduct && (
-        <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
-          <CardContent className="pt-4 flex items-center gap-3 text-blue-900 dark:text-blue-100">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="text-sm">
-              <span className="font-semibold">Current Context:</span> Analyzing data for product <span className="font-mono bg-blue-100 dark:bg-blue-800 px-2 py-0.5 rounded">{lastProduct}</span>. Mention a different SKU to switch products.
-            </p>
-          </CardContent>
-        </Card>
-      )}
     </motion.div>
   );
 }

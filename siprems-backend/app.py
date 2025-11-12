@@ -8,6 +8,7 @@ import psycopg2.extras  # <-- Import tambahan untuk RealDictCursor
 from dotenv import load_dotenv
 import numpy as np
 import datetime
+import random
 
 # --- Inisialisasi Aplikasi Flask & Database ---
 load_dotenv()  # Memuat variabel dari file .env
@@ -426,7 +427,66 @@ def predict_stock():
         })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500    
+        return jsonify({'error': str(e)}), 500 
+
+@app.route('/chat', methods=['POST'])
+def chat_with_ai():
+    """
+    [CREATE] - Mensimulasikan respons AI Chatbot.
+    Ini mengambil data dummy dari frontend dan memindahkannya ke backend.
+    """
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '').lower()
+
+        # Pindahkan array respons dari frontend ke backend
+        ai_responses = [
+            "Permintaan Produk Laptop (LAP-001) meningkat karena tren liburan musiman. Berdasarkan data historis, kami biasanya melihat peningkatan 20-30% pada bulan November dan Desember.",
+            "Produk Monitor (MON-001) menunjukkan tingkat stok rendah (hanya 5 unit). Model prediksi menyarankan restock segera untuk menghindari kehabisan stok.",
+            "Model Prophet AI menggunakan data penjualan historis, pola musiman (mingguan/tahunan), dan data liburan (dari kalender) untuk memperkirakan permintaan di masa depan.",
+            "Data penjualan Anda menunjukkan kinerja yang kuat pada akhir pekan (Jumat-Sabtu). Pertimbangkan untuk menambah stok pada hari-hari tersebut.",
+            "Berdasarkan interval kepercayaan prediksi, produk Mouse (MOU-001) memiliki permintaan yang stabil dengan varians rendah. Ini menjadikannya produk yang mudah direncanakan.",
+        ]
+        
+        # Logika AI "palsu" berbasis kata kunci
+        if "laptop" in user_message or "lap-001" in user_message:
+            response_content = ai_responses[0]
+        elif "monitor" in user_message or "mon-001" in user_message:
+            response_content = ai_responses[1]
+        elif "prophet" in user_message or "model" in user_message:
+            response_content = ai_responses[2]
+        elif "kapan" in user_message or "restock" in user_message:
+            response_content = ai_responses[1]
+        elif "penjualan" in user_message or "tren" in user_message:
+            response_content = ai_responses[3]
+        else:
+            # Jika tidak ada kata kunci yang cocok, pilih respons acak
+            response_content = random.choice(ai_responses)
+
+        return jsonify({'role': 'assistant', 'content': response_content})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/settings/status', methods=['GET'])
+def get_system_status():
+    """
+    [READ] - Mengambil info status sistem.
+    """
+    try:
+        # Coba kueri ke database untuk memeriksa koneksi
+        db_query("SELECT 1", fetch_all=False)
+        db_status = "Connected"
+    except Exception:
+        db_status = "Disconnected"
+
+    return jsonify({
+        'version': '1.0.0',
+        'last_updated': 'November 12, 2025', # Anda bisa buat ini dinamis jika mau
+        'ai_model': 'Prophet v1.1 (Python)',
+        'database_status': db_status
+    })
+   
 # --- Menjalankan Server ---
 if __name__ == '__main__':
     # 'port=5000' adalah port standar untuk backend Flask
