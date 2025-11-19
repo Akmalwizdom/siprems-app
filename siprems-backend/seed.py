@@ -1,170 +1,142 @@
-import psycopg2
 import os
-import datetime
-import random
+import pandas as pd
+import psycopg2
 import numpy as np
+from datetime import datetime
 from dotenv import load_dotenv
 
-# Muat variabel dari .env
+# Load environment variables
 load_dotenv()
 
-# Data awal produk dari ProductsPage.tsx
-INITIAL_PRODUCTS = [
-    ('Laptop', 'Electronics', '15-inch', 999.99, 12, 'LAP-001'),
-    ('Mouse', 'Electronics', 'Wireless', 29.99, 45, 'MOU-001'),
-    ('Keyboard', 'Electronics', 'Mechanical', 129.99, 8, 'KEY-001'),
-    ('Monitor', 'Electronics', '27-inch 4K', 599.99, 5, 'MON-001'),
-    ('Desk Lamp', 'Office', 'LED', 49.99, 2, 'LAM-001'),
-]
+# Konfigurasi Database
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_NAME = os.getenv("DB_NAME", "siprems_db")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASS = os.getenv("DB_PASSWORD", "password")
 
-# Data hari libur dari CalendarPage.tsx
-NATIONAL_HOLIDAYS = [
-    ('New Year Day', '2023-01-01', 'holiday', 'National holiday'),
-    ('Independence Day', '2023-07-04', 'holiday', 'National holiday'),
-    ('Thanksgiving', '2023-11-23', 'holiday', 'National holiday'),
-    ('Christmas', '2023-12-25', 'holiday', 'National holiday'),
-    ('New Year Day', '2024-01-01', 'holiday', 'National holiday'),
-    ('Independence Day', '2024-07-04', 'holiday', 'National holiday'),
-    ('Thanksgiving', '2024-11-28', 'holiday', 'National holiday'),
-    ('Christmas', '2024-12-25', 'holiday', 'National holiday'),
-    ('New Year Day', '2025-01-01', 'holiday', 'National holiday'),
-    ('Independence Day', '2025-07-04', 'holiday', 'National holiday'),
-    ('Thanksgiving', '2025-11-27', 'holiday', 'National holiday'),
-    ('Christmas', '2025-12-25', 'holiday', 'National holiday'),
-]
+# Mapping Produk: ID Dataset -> Atribut Database
+PRODUCT_MAPPING = {
+    1: {"sku": "BRD-001", "name": "Roti Tawar (Bread)", "category": "Bread", "price": 4.00, "stock": 50},
+    2: {"sku": "RLL-001", "name": "Roti Gulung (Rolls)", "category": "Rolls", "price": 2.50, "stock": 100},
+    3: {"sku": "CRS-001", "name": "Croissant", "category": "Pastry", "price": 3.50, "stock": 40},
+    4: {"sku": "CNF-001", "name": "Kue Sus (Confectionery)", "category": "Confectionery", "price": 5.00, "stock": 30},
+    5: {"sku": "CKE-001", "name": "Kue Bolu (Cake)", "category": "Cake", "price": 8.00, "stock": 20},
+    6: {"sku": "SEA-001", "name": "Roti Musiman (Seasonal)", "category": "Seasonal", "price": 6.00, "stock": 25},
+}
 
 def get_db_connection():
-    """Mendapatkan koneksi ke database PostgreSQL."""
     conn = psycopg2.connect(
-        host=os.getenv('DB_HOST'),
-        database=os.getenv('DB_NAME'),
-        user=os.getenv('DB_USER'),
-        password=os.getenv('DB_PASSWORD')
+        host=DB_HOST,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASS
     )
     return conn
 
-def seed_products(cur):
-    """Mengisi tabel products dengan data awal."""
-    cur.executemany(
-        """
-        INSERT INTO products (name, category, variation, price, stock, sku)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (sku) DO NOTHING;
-        """,
-        INITIAL_PRODUCTS
-    )
-    print("-> Tabel 'products' berhasil di-seed.")
+def seed_data():
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-def seed_events(cur):
-    """Mengisi tabel events dengan data hari libur."""
-    cur.executemany(
-        """
-        INSERT INTO events (event_name, event_date, type, description, include_in_prediction)
-        VALUES (%s, %s::date, %s::event_type, %s, TRUE)
-        ON CONFLICT (event_name, event_date) DO NOTHING;
-        """,
-        NATIONAL_HOLIDAYS
-    )
-    print("-> Tabel 'events' berhasil di-seed.")
-
-def generate_sales_data(cur):
-    """
-    Membuat data penjualan tiruan yang realistis untuk 'Laptop' (LAP-001)
-    selama 2 tahun terakhir untuk data training Prophet.
-    """
-    print("Membuat data transaksi (penjualan)... Ini mungkin perlu waktu sejenak.")
-    
-    # Dapatkan product_id dan harga untuk 'Laptop'
-    cur.execute("SELECT product_id, price FROM products WHERE sku = 'LAP-001';")
-    result = cur.fetchone()
-    if not result:
-        print("Error: Product 'LAP-001' tidak ditemukan. Pastikan sudah ada di tabel products.")
-        return
-        
-    product_id, product_price = result
-    
-    start_date = datetime.date(2023, 1, 1)
-    end_date = datetime.date(2025, 11, 9) # Sesuai dengan data mock sebelumnya
-    delta = end_date - start_date
-    
-    sales_data = []
-    
-    for i in range(delta.days + 1):
-        date = start_date + datetime.timedelta(days=i)
-        
-        # 1. Base sales
-        base_sales = 10 + np.sin(i * 0.02) * 5  # Pola sinus sederhana
-        
-        # 2. Musiman Mingguan (Weekend lebih tinggi)
-        weekly_seasonality = [0, 0, 1, 2, 5, 15, 12] # Mon=0, ..., Sat=15, Sun=12
-        sales = base_sales + weekly_seasonality[date.weekday()]
-        
-        # 3. Musiman Tahunan (Lonjakan di Nov/Des)
-        if date.month in [11, 12]:
-            sales *= 1.8  # Lonjakan 80%
-            
-        # 4. Acak (noise)
-        sales += random.randint(-2, 3)
-        
-        # Pastikan penjualan tidak negatif dan merupakan integer
-        final_sales = max(0, int(sales))
-        
-        if final_sales > 0:
-            # Simulasikan beberapa transaksi per hari
-            for _ in range(random.randint(1, final_sales // 2 or 1)):
-                qty = random.randint(1, 2)
-                if final_sales <= 0: break
-                
-                # Tambahkan sedikit variasi waktu dalam sehari
-                time = datetime.time(random.randint(9, 20), random.randint(0, 59))
-                transaction_date = datetime.datetime.combine(date, time)
-                
-                sales_data.append((product_id, qty, product_price, transaction_date))
-                final_sales -= qty
-
-    # Masukkan semua data penjualan ke database
-    cur.executemany(
-        """
-        INSERT INTO transactions (product_id, quantity_sold, price_per_unit, transaction_date)
-        VALUES (%s, %s, %s, %s);
-        """,
-        sales_data
-    )
-    print(f"-> Tabel 'transactions' berhasil di-seed dengan {len(sales_data)} record penjualan.")
-
-
-def main():
-    """Fungsi utama untuk menjalankan seeder."""
-    conn = None
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
+        print("🔄 Menghapus data lama...")
+        # Reset data dan sequence ID
+        cursor.execute("TRUNCATE TABLE transactions, products, events RESTART IDENTITY CASCADE;")
         
-        print("Menjalankan seeder...")
+        # --- 1. SEED PRODUCTS ---
+        print("🍞 Seeding Products...")
+        for pid, data in PRODUCT_MAPPING.items():
+            cursor.execute(
+                """
+                INSERT INTO products (product_id, sku, name, category, stock, price)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (pid, data['sku'], data['name'], data['category'], data['stock'], data['price'])
+            )
         
-        # Hapus data lama agar bisa dijalankan ulang
-        print("Menghapus data lama (TRUNCATE)...")
-        cur.execute("TRUNCATE TABLE transactions, products, events RESTART IDENTITY CASCADE;")
-        
-        # Seed data
-        seed_products(cur)
-        seed_events(cur)
-        generate_sales_data(cur)
-        
-        # Commit perubahan
+        # --- 2. SEED EVENTS ---
+        print("📅 Seeding Events from kiwo.csv...")
+        if os.path.exists('kiwo.csv'):
+            df_kiwo = pd.read_csv('kiwo.csv')
+            # Ambil hanya yang KielerWoche == 1
+            kiwo_events = df_kiwo[df_kiwo['KielerWoche'] == 1]
+            
+            for _, row in kiwo_events.iterrows():
+                cursor.execute(
+                    """
+                    INSERT INTO events (event_date, event_name, type, include_in_prediction)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (event_name, event_date) DO NOTHING
+                    """,
+                    (row['Datum'], 'Kieler Woche Festival', 'custom', True) 
+                    # Note: 'type' diisi 'custom' sesuai ENUM di schema
+                )
+        else:
+            print("⚠️ File kiwo.csv tidak ditemukan. Melewati seeding events.")
+
+        # --- 3. SEED TRANSACTIONS ---
+        print("📈 Seeding Transactions from train.csv (Mohon tunggu)...")
+        if os.path.exists('train.csv'):
+            df_train = pd.read_csv('train.csv')
+            
+            transaction_values = []
+            count = 0
+            
+            for _, row in df_train.iterrows():
+                product_id = int(row['Warengruppe'])
+                
+                # Skip jika produk tidak ada di mapping kita
+                if product_id not in PRODUCT_MAPPING:
+                    continue
+                
+                price = PRODUCT_MAPPING[product_id]['price']
+                umsatz = row['Umsatz']
+                
+                # Skip data kosong/error
+                if pd.isna(umsatz) or umsatz <= 0:
+                    continue
+                    
+                # Hitung quantity dari revenue
+                quantity = max(1, int(np.ceil(umsatz / price)))
+                is_promo = False 
+
+                # Format data untuk Bulk Insert
+                # Urutan: product_id, date, qty, price, promo
+                transaction_values.append((
+                    product_id,
+                    row['Datum'],
+                    quantity,
+                    price,
+                    is_promo
+                ))
+                
+                count += 1
+                if count % 10000 == 0:
+                    print(f"   ...memproses {count} baris")
+
+            # Lakukan Batch Insert untuk performa
+            if transaction_values:
+                # Membuat template string (%s, %s, ...)
+                args_str = ','.join(cursor.mogrify("(%s, %s, %s, %s, %s)", x).decode('utf-8') for x in transaction_values)
+                
+                cursor.execute(
+                    f"INSERT INTO transactions (product_id, transaction_date, quantity_sold, price_per_unit, is_promo) VALUES {args_str}"
+                )
+                print(f"✅ Berhasil memasukkan {len(transaction_values)} transaksi.")
+            else:
+                print("⚠️ Tidak ada data transaksi valid yang ditemukan.")
+            
+        else:
+            print("⚠️ File train.csv tidak ditemukan. Melewati seeding transaksi.")
+
         conn.commit()
-        
-        print("\nSeeding database selesai!")
-        
+        print("🎉 Database SELESAI diperbarui!")
+
     except Exception as e:
-        print(f"Terjadi error: {e}")
-        if conn:
-            conn.rollback() # Batalkan perubahan jika ada error
+        print(f"❌ Terjadi kesalahan: {e}")
+        conn.rollback()
     finally:
-        if conn:
-            cur.close()
-            conn.close()
-            print("Koneksi database ditutup.")
+        cursor.close()
+        conn.close()
 
 if __name__ == "__main__":
-    main()
+    seed_data()

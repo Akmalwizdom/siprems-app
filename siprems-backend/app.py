@@ -1,6 +1,7 @@
 import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import json
 import os
 import psycopg2
 import psycopg2.extras 
@@ -484,19 +485,33 @@ def predict_stock():
             return jsonify({'error': 'Product SKU is required.'}), 400
             
         product_sku = data['product_sku']
+        forecast_days = int(data.get('days', 7))
         
-        # 1. Jalankan Prediksi via ML Engine (V4 Logic + Promo Regressor)
-        forecast = ml_engine.predict(product_sku, days=7)
+        # 1. Jalankan Prediksi
+        forecast = ml_engine.predict(product_sku, days=forecast_days)
         
-        # 2. Ambil data aktual untuk visualisasi
+        # Pastikan kolom ds bertipe datetime
+        forecast['ds'] = pd.to_datetime(forecast['ds'])
+        
+        # 2. Ambil data aktual
         actual_df = ml_engine.get_sales_data(product_sku)
+        if not actual_df.empty:
+            actual_df['ds'] = pd.to_datetime(actual_df['ds'])
         
-        # 3. Format Data untuk Frontend
+        # 3. Format Data untuk Grafik (Logic View Dinamis)
+        # Gunakan tanggal terakhir dari PREDIKSI, bukan hari ini
         last_date = forecast['ds'].max()
-        start_view_date = last_date - datetime.timedelta(days=14)
+        view_range_days = forecast_days + 30 # Lihat 30 hari ke belakang
+        
+        # Hitung start date relatif terhadap data terakhir
+        start_view_date = last_date - pd.Timedelta(days=view_range_days)
+        
+        # Filter data
         view_df = forecast[forecast['ds'] >= start_view_date].copy()
         
-        actual_map = {d.strftime('%Y-%m-%d'): val for d, val in zip(actual_df['ds'], actual_df['y'])}
+        actual_map = {}
+        if not actual_df.empty:
+            actual_map = {d.strftime('%Y-%m-%d'): val for d, val in zip(actual_df['ds'], actual_df['y'])}
         
         chart_data = []
         for _, row in view_df.iterrows():
@@ -511,14 +526,20 @@ def predict_stock():
                 'upper': round(row['yhat_upper_corrected'])
             })
 
-        # 4. Buat Rekomendasi Restock
+        # 4. Buat Rekomendasi Restock (PERBAIKAN LOGIKA)
         product_info_query = "SELECT name, stock FROM products WHERE sku = %s"
         product_info = db_query(product_info_query, (product_sku,), fetch_all=False)
         
-        future_days = forecast.iloc[-7:]
-        total_predicted_sales = future_days['yhat_corrected'].sum()
+        # [FIX] Ambil n hari terakhir sebagai prediksi masa depan
+        # Karena Prophet append future dates di akhir dataframe
+        future_days_df = forecast.tail(forecast_days)
         
-        optimal_stock = round(total_predicted_sales * 1.2)
+        # Hitung total prediksi
+        total_predicted_sales = future_days_df['yhat_corrected'].sum()
+        
+        # Buffer stok
+        buffer_percent = 1.2 if forecast_days <= 7 else 1.1
+        optimal_stock = round(total_predicted_sales * buffer_percent)
         current_stock = product_info['stock']
         
         gap = optimal_stock - current_stock
@@ -530,7 +551,7 @@ def predict_stock():
         else:
             suggestion = "Stok Aman"
             urgency = "low"
-            trend = "down" if total_predicted_sales < current_stock * 0.5 else "up"
+            trend = "down"
 
         recommendations = [{
             'product': product_info['name'],
@@ -541,13 +562,27 @@ def predict_stock():
             'urgency': urgency
         }]
 
+        # Ambil Akurasi
+        accuracy_score = 0
+        meta_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "meta", f"meta_{product_sku}.json")
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r') as f:
+                    meta = json.load(f)
+                    accuracy_score = meta.get('accuracy_score', 0)
+            except:
+                pass
+
         return jsonify({
             'chartData': chart_data,
-            'recommendations': recommendations
+            'recommendations': recommendations,
+            'accuracy': round(accuracy_score, 1)
         })
 
     except Exception as e:
         print(f"Prediction Error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/chat', methods=['POST'])

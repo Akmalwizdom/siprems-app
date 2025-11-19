@@ -7,6 +7,7 @@ import json
 import logging
 import psycopg2
 import psycopg2.extras
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 
 # Konfigurasi Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
@@ -39,8 +40,7 @@ class MLEngine:
 
     def get_sales_data(self, product_sku):
         """
-        [MODIFIKASI] Mengambil data penjualan beserta status promo.
-        Jika dalam sehari ada setidaknya satu transaksi promo, hari itu dianggap 'promo=1'.
+        Mengambil data penjualan beserta status promo.
         """
         query = """
             SELECT 
@@ -66,14 +66,13 @@ class MLEngine:
         df = pd.DataFrame(self.get_db_connection(query, fetch_all=True))
         if not df.empty:
             df['ds'] = pd.to_datetime(df['ds'])
-            # V4 Logic: Window liburan H-2 sampai H+1
             df['lower_window'] = -2
             df['upper_window'] = 1
         return df if not df.empty else None
 
     def train_product_model(self, product_sku):
         """
-        Logika Training V4 + Promo Regressor
+        Logika Training V4 + Promo Regressor + Metrik Akurasi
         """
         df = self.get_sales_data(product_sku)
         holidays = self.get_holidays()
@@ -81,16 +80,16 @@ class MLEngine:
         if df.empty or len(df) < 5:
             return {"status": "skipped", "reason": "Not enough data"}
 
-        # 1. V4 Logic: Log Transform
+        # 1. Preprocessing: Log Transform
         df['y_log'] = np.log1p(df['y'])
         
-        # 2. V4 Logic: Outlier Removal (Sigma 3.5)
+        # 2. Preprocessing: Outlier Removal (Sigma 3.5)
         mu = df['y_log'].mean()
         std = df['y_log'].std()
         if std > 0:
             df = df[np.abs(df['y_log'] - mu) <= (3.5 * std)].copy()
 
-        # 3. V4 Logic: Prophet Configuration
+        # 3. Konfigurasi Model Prophet
         model = Prophet(
             yearly_seasonality=True,
             weekly_seasonality=True,
@@ -102,77 +101,95 @@ class MLEngine:
         )
         
         model.add_seasonality(name='monthly', period=30.5, fourier_order=15)
-        
-        # [MODIFIKASI] Tambahkan regressor promo
         model.add_regressor('promo')
 
         # Fit Model
         df_fit = df[['ds', 'y_log', 'promo']].rename(columns={'y_log': 'y'})
         model.fit(df_fit)
 
-        # 4. V4 Logic: Dynamic Correction Factor
+        # 4. Evaluasi Model & Hitung Faktor Koreksi
         forecast = model.predict(df_fit)
         y_pred = np.expm1(forecast['yhat'].values)
         y_true = np.expm1(df_fit['y'].values)
         
+        # Hitung Faktor Koreksi (WAJIB DILAKUKAN SEBELUM DISIMPAN)
         ratios = y_true / (y_pred + 1e-6)
         correction_factor = float(np.median(ratios))
         correction_factor = max(0.90, min(1.10, correction_factor))
 
-        # Simpan Model & Metadata
+        # Hitung Metrik Akurasi (MAE & MAPE)
+        mae = mean_absolute_error(y_true, y_pred)
+        mape = mean_absolute_percentage_error(y_true, y_pred)
+        accuracy_score = max(0, 100 * (1 - mape)) # Pastikan tidak negatif
+
+        # Simpan Model
         with open(os.path.join(MODELS_DIR, f"model_{product_sku}.json"), "w") as f:
             f.write(model_to_json(model))
             
+        # Simpan Metadata (Termasuk Correction Factor & Akurasi)
         with open(os.path.join(META_DIR, f"meta_{product_sku}.json"), "w") as f:
-            json.dump({"correction_factor": correction_factor}, f)
+            json.dump({
+                "correction_factor": correction_factor,
+                "mae": mae,
+                "mape_percent": mape * 100,
+                "accuracy_score": accuracy_score
+            }, f)
 
-        return {"status": "success", "factor": correction_factor}
+        return {
+            "status": "success", 
+            "factor": correction_factor,
+            "accuracy": accuracy_score
+        }
 
     def predict(self, product_sku, days=7):
         """
-        Implementasi Prediksi dengan handling Promo Masa Depan
+        Prediksi dengan handling Promo Masa Depan & Correction Factor
         """
         model_path = os.path.join(MODELS_DIR, f"model_{product_sku}.json")
         meta_path = os.path.join(META_DIR, f"meta_{product_sku}.json")
 
+        # Latih model jika belum ada
         if not os.path.exists(model_path):
             res = self.train_product_model(product_sku)
             if res['status'] != 'success':
                 raise Exception("Data tidak cukup untuk prediksi.")
 
+        # Load Model
         with open(model_path, 'r') as f:
             model = model_from_json(f.read())
         
+        # Load Correction Factor (Default 1.0 jika gagal load)
         correction_factor = 1.0
+        accuracy_score = 0.0
+        
         if os.path.exists(meta_path):
             with open(meta_path, 'r') as f:
                 meta = json.load(f)
                 correction_factor = meta.get('correction_factor', 1.0)
+                accuracy_score = meta.get('accuracy_score', 0.0)
 
         # Buat DataFrame Masa Depan
         future = model.make_future_dataframe(periods=days)
         
-        # [MODIFIKASI] Isi kolom promo untuk dataframe 'future'.
-        # Kita perlu mengisi nilai promo untuk tanggal historical (agar grafik fit akurat)
-        # dan tanggal masa depan (asumsi sederhana: 0 / tidak ada promo).
-        
-        # 1. Ambil data history promo
+        # Handling Promo Masa Depan
         df_history = self.get_sales_data(product_sku)
-        # Buat map {tanggal: promo_status}
         promo_map = dict(zip(df_history['ds'], df_history['promo']))
-        
-        # 2. Map ke 'future', isi 0 jika tidak ada di history (masa depan)
         future['promo'] = future['ds'].map(promo_map).fillna(0)
         
+        # Prediksi
         forecast = model.predict(future)
 
-        # V4 Logic: Apply Correction & Inverse Log
+        # Terapkan Faktor Koreksi & Inverse Log
         forecast['yhat_corrected'] = np.expm1(forecast['yhat']) * correction_factor
         forecast['yhat_lower_corrected'] = np.expm1(forecast['yhat_lower']) * correction_factor
         forecast['yhat_upper_corrected'] = np.expm1(forecast['yhat_upper']) * correction_factor
 
+        # Pastikan tidak ada nilai negatif
         cols = ['yhat_corrected', 'yhat_lower_corrected', 'yhat_upper_corrected']
         for col in cols:
             forecast[col] = forecast[col].clip(lower=0)
+        
+        # Kembalikan juga nilai akurasi untuk ditampilkan di Frontend (opsional)
+        forecast['accuracy_score'] = accuracy_score
 
         return forecast

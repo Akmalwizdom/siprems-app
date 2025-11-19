@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TrendingUp, Loader2, CheckCircle, AlertTriangle, ArrowUp, ArrowDown, Package } from 'lucide-react';
+import { TrendingUp, Loader2, CheckCircle, AlertTriangle, ArrowUp, ArrowDown, Package, Calendar } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import {
@@ -27,8 +27,8 @@ import { Badge } from './ui/badge';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Label } from './ui/label';
+import { toast } from 'sonner';
 
-// Tipe data untuk hasil API
 interface ChartData {
   date: string;
   actual: number | null;
@@ -46,7 +46,6 @@ interface RecommendationData {
   urgency: 'high' | 'medium' | 'low';
 }
 
-// Tipe data Produk (untuk dropdown)
 interface Product {
   product_id: number;
   name: string;
@@ -60,15 +59,16 @@ export default function PredictionPage() {
   const [showResults, setShowResults] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // State untuk data dari API
   const [predictionData, setPredictionData] = useState<ChartData[]>([]);
   const [recommendations, setRecommendations] = useState<RecommendationData[]>([]);
-  
-  // State baru untuk dropdown produk
+  const [modelAccuracy, setModelAccuracy] = useState<number | null>(null);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedSku, setSelectedSku] = useState<string>("");
+  
+  // [BARU] State untuk periode prediksi
+  const [forecastDays, setForecastDays] = useState<string>("30");
 
-  // Ambil daftar produk untuk dropdown saat halaman dimuat
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -76,7 +76,6 @@ export default function PredictionPage() {
         if (!response.ok) throw new Error('Failed to fetch products');
         const data: Product[] = await response.json();
         setProducts(data);
-        // Set produk pertama sebagai default jika ada
         if (data.length > 0) {
           setSelectedSku(data[0].sku);
         }
@@ -88,24 +87,26 @@ export default function PredictionPage() {
     fetchProducts();
   }, []);
 
-
   const handleRunPrediction = async () => {
     if (!selectedSku) {
-      toast.error("Please select a product to predict.");
+      toast.error("Please select a product first.");
       return;
     }
 
     setIsRunning(true);
     setShowResults(false);
     setApiError(null);
+    setModelAccuracy(null);
 
     try {
       const response = await fetch(`${API_URL}/predict`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ product_sku: selectedSku }) // Kirim SKU yang dipilih
+        headers: { 'Content-Type': 'application/json' },
+        // [BARU] Kirim parameter days ke backend
+        body: JSON.stringify({ 
+          product_sku: selectedSku,
+          days: parseInt(forecastDays) 
+        })
       });
 
       const data = await response.json();
@@ -114,8 +115,6 @@ export default function PredictionPage() {
         throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
 
-      // --- PERBAIKAN PENTING ---
-      // Konversi semua string angka dari JSON menjadi number
       const cleanChartData: ChartData[] = data.chartData.map((d: any) => ({
         ...d,
         actual: d.actual ? parseFloat(String(d.actual)) : null,
@@ -132,15 +131,16 @@ export default function PredictionPage() {
 
       setPredictionData(cleanChartData);
       setRecommendations(cleanRecData);
+      
+      if (data.accuracy !== undefined) {
+        setModelAccuracy(data.accuracy);
+      }
+      
       setShowResults(true);
 
     } catch (error) {
       console.error('Failed to run prediction:', error);
-      if (error instanceof Error) {
-        setApiError(error.message);
-      } else {
-        setApiError('An unknown error occurred.');
-      }
+      setApiError(error instanceof Error ? error.message : 'An unknown error occurred.');
     } finally {
       setIsRunning(false);
     }
@@ -153,205 +153,204 @@ export default function PredictionPage() {
       transition={{ duration: 0.5 }}
       className="space-y-6"
     >
-      {/* Header */}
       <div>
         <h1 className="text-gray-900 dark:text-white mb-2">Stock Prediction</h1>
-        <p className="text-gray-600 dark:text-gray-400">Run AI-powered predictions for optimal inventory management</p>
+        <p className="text-gray-600 dark:text-gray-400">AI-powered inventory forecasting</p>
       </div>
 
-      {/* Run Prediction Section */}
       <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
         <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row items-center justify-center gap-8">
-            <div className="flex-shrink-0 bg-blue-50 dark:bg-blue-900/30 rounded-full w-20 h-20 flex items-center justify-center mx-auto">
+          <div className="flex flex-col xl:flex-row items-center justify-center gap-8">
+            <div className="flex-shrink-0 bg-blue-50 dark:bg-blue-900/30 rounded-full w-20 h-20 flex items-center justify-center">
               <TrendingUp className="w-10 h-10 text-blue-500" />
             </div>
             
-            <div className="flex-1 w-full text-center md:text-left">
-              <h2 className="text-gray-900 dark:text-white mb-2">Prophet AI Model</h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Select a product and click the button to run stock predictions.
-              </p>
+            <div className="flex-1 w-full space-y-4 text-center xl:text-left">
+              <div>
+                <h2 className="text-gray-900 dark:text-white font-semibold mb-1">Configuration</h2>
+                <p className="text-gray-600 dark:text-gray-400 text-sm">
+                  Configure your prediction parameters below.
+                </p>
+              </div>
               
-              <div className="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-4">
-                {/* --- DROPDOWN PRODUK BARU --- */}
+              <div className="flex flex-col sm:flex-row items-center gap-4 justify-center xl:justify-start">
+                {/* Product Selector */}
                 <div className="space-y-2 w-full sm:w-64">
-                  <Label htmlFor="product-select" className="sr-only">Select Product</Label>
+                  <Label className="text-xs text-gray-500 uppercase font-bold">Product</Label>
                   <Select value={selectedSku} onValueChange={setSelectedSku}>
-                    <SelectTrigger id="product-select" className="rounded-xl">
+                    <SelectTrigger className="rounded-xl">
                       <div className="flex items-center gap-2">
                         <Package className="w-4 h-4 text-gray-500" />
-                        <SelectValue placeholder="Select a product" />
+                        <SelectValue placeholder="Select product" />
                       </div>
                     </SelectTrigger>
                     <SelectContent>
-                      {products.length > 0 ? (
-                        products.map((product) => (
-                          <SelectItem key={product.sku} value={product.sku}>
-                            {product.name} ({product.sku})
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="" disabled>Loading products...</SelectItem>
-                      )}
+                      {products.map((p) => (
+                        <SelectItem key={p.sku} value={p.sku}>{p.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* --- Tombol Run Prediction --- */}
-                <AnimatePresence mode="wait">
-                  {!isRunning && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    >
-                      <Button
-                        size="lg"
-                        onClick={handleRunPrediction}
-                        disabled={!selectedSku}
-                        className="rounded-xl bg-blue-500 hover:bg-blue-600 hover:text-cyan-100 w-full sm:w-auto"
-                      >
-                        <TrendingUp className="w-5 h-5 mr-2" />
-                        Run Stock Prediction
-                      </Button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                {/* [BARU] Time Period Selector */}
+                <div className="space-y-2 w-full sm:w-40">
+                  <Label className="text-xs text-gray-500 uppercase font-bold">Period</Label>
+                  <Select value={forecastDays} onValueChange={setForecastDays}>
+                    <SelectTrigger className="rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-gray-500" />
+                        <SelectValue placeholder="Duration" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="7">7 Days (Short)</SelectItem>
+                      <SelectItem value="30">30 Days (Medium)</SelectItem>
+                      <SelectItem value="60">60 Days (Long)</SelectItem>
+                      <SelectItem value="90">90 Days (Quarter)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Run Button */}
+                <div className="space-y-2 w-full sm:w-auto sm:self-end">
+                   {/* Spacer label agar sejajar */}
+                   <Label className="text-xs opacity-0 hidden sm:block">Action</Label> 
+                   <Button
+                    size="default"
+                    onClick={handleRunPrediction}
+                    disabled={isRunning || !selectedSku}
+                    className="rounded-xl bg-blue-600 hover:bg-blue-700 w-full"
+                  >
+                    {isRunning ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <TrendingUp className="w-4 h-4 mr-2" />}
+                    {isRunning ? 'Analyzing...' : 'Run Prediction'}
+                  </Button>
+                </div>
               </div>
             </div>
-
-            {/* --- INDIKATOR LOADING & SUKSES --- */}
-            <AnimatePresence mode="wait">
-              {isRunning && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="space-y-4 text-center w-48"
-                >
-                  <Loader2 className="w-12 h-12 text-blue-500 animate-spin mx-auto" />
-                  <div>
-                    <p className="text-gray-900 dark:text-white">Running model...</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      Analyzing data...
-                    </p>
-                  </div>
-                </motion.div>
-              )}
-
-              {showResults && !isRunning && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="space-y-4 text-center w-48"
-                >
-                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
-                  <div>
-                    <p className="text-gray-900 dark:text-white">Prediction Complete!</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">View results below</p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
 
-          {/* Tampilkan Pesan Error API */}
           {apiError && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="pt-4 mt-4"
-            >
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Prediction Failed</AlertTitle>
-                <AlertDescription>
-                  {apiError}
-                </AlertDescription>
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{apiError}</AlertDescription>
               </Alert>
             </motion.div>
           )}
         </CardContent>
       </Card>
 
-      {/* Results Section */}
       <AnimatePresence>
         {showResults && (
           <>
-            {/* Prediction Chart */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
               <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-gray-900 dark:text-white">
-                    Prediction Results for <span className="text-blue-500">{recommendations[0]?.product || ''}</span>
-                  </CardTitle>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    7-day forecast with confidence intervals
-                  </p>
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                      <CardTitle className="text-gray-900 dark:text-white">
+                        Forecast Results: <span className="text-blue-500">{recommendations[0]?.product}</span>
+                      </CardTitle>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Showing historical context & {forecastDays}-day future forecast
+                      </p>
+                    </div>
+                    
+                    {modelAccuracy !== null && (
+                      <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 py-1.5">
+                        <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mr-2" />
+                        <div>
+                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider leading-none">
+                            Model Accuracy
+                          </p>
+                          <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300 leading-none mt-0.5">
+                            {modelAccuracy}%
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <ResponsiveContainer width="100%" height={400}>
-                    <ComposedChart data={predictionData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" stroke="#888" />
-                      <YAxis stroke="#888" />
-                      <Tooltip />
-                      <Legend />
-                      <Area
-                        type="monotone"
-                        dataKey="upper"
-                        fill="#DBEAFE"
-                        stroke="none"
-                        fillOpacity={0.6}
-                        name="Confidence Upper"
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="lower"
-                        fill="#ffffff"
-                        stroke="none"
-                        fillOpacity={1}
-                        name="Confidence Lower"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="actual"
-                        stroke="#6B7280"
-                        strokeWidth={2}
-                        dot={{ fill: '#6B7280', r: 4 }}
-                        name="Actual Sales"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="predicted"
-                        stroke="#3B82F6"
-                        strokeWidth={3}
-                        dot={{ fill: '#3B82F6', r: 5 }}
-                        name="Predicted Sales"
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
+                  <div className="h-[400px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={predictionData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorPredicted" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.1}/>
+                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                        <XAxis 
+                          dataKey="date" 
+                          stroke="#9CA3AF" 
+                          fontSize={12} 
+                          tickLine={false} 
+                          axisLine={false}
+                          // Jika periode panjang, kurangi jumlah label di sumbu X agar rapi
+                          interval={parseInt(forecastDays) > 30 ? 'preserveStartEnd' : 0}
+                        />
+                        <YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                          labelStyle={{ color: '#374151', fontWeight: 'bold' }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                        
+                        {/* Area Kepercayaan (Confidence Interval) */}
+                        <Area
+                          type="monotone"
+                          dataKey="upper"
+                          stroke="none"
+                          fill="#BFDBFE"
+                          fillOpacity={0.3}
+                          name="Confidence Range"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="lower"
+                          stroke="none"
+                          fill="#fff" // Hack untuk membuat 'lubang' di bawah lower bound agar terlihat seperti range
+                          fillOpacity={1}
+                          name="Hidden"
+                          legendType='none'
+                          tooltipType='none'
+                        />
+                        
+                        {/* Garis Aktual */}
+                        <Line
+                          type="monotone"
+                          dataKey="actual"
+                          stroke="#9CA3AF"
+                          strokeWidth={2}
+                          dot={parseInt(forecastDays) <= 30 ? { r: 3, fill: "#9CA3AF" } : false} // Hilangkan dot jika periode panjang
+                          name="Actual Sales"
+                          connectNulls
+                        />
+                        
+                        {/* Garis Prediksi */}
+                        <Line
+                          type="monotone"
+                          dataKey="predicted"
+                          stroke="#2563EB"
+                          strokeWidth={3}
+                          dot={false}
+                          name="AI Forecast"
+                          animationDuration={1500}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
 
-            {/* Recommendations Table */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
               <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
                 <CardHeader>
-                  <CardTitle className="text-gray-900 dark:text-white">Restock Recommendations</CardTitle>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Optimal inventory levels based on predictions
-                  </p>
+                  <CardTitle className="text-gray-900 dark:text-white">Actionable Insights</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Table>
@@ -359,37 +358,27 @@ export default function PredictionPage() {
                       <TableRow>
                         <TableHead>Product</TableHead>
                         <TableHead>Current Stock</TableHead>
-                        <TableHead>Optimal Stock</TableHead>
+                        <TableHead>Target Stock</TableHead>
                         <TableHead>Trend</TableHead>
-                        <TableHead>Suggestion</TableHead>
-                        <TableHead>Priority</TableHead>
+                        <TableHead>Recommendation</TableHead>
+                        <TableHead>Urgency</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {recommendations.map((rec) => (
                         <TableRow key={rec.product}>
-                          <TableCell>{rec.product}</TableCell>
+                          <TableCell className="font-medium">{rec.product}</TableCell>
                           <TableCell>{rec.current}</TableCell>
                           <TableCell>{rec.optimal}</TableCell>
                           <TableCell>
-                            {rec.trend === 'up' ? (
-                              <ArrowUp className="w-4 h-4 text-green-500" />
-                            ) : (
-                              <ArrowDown className="w-4 h-4 text-red-500" />
-                            )}
+                            <div className="flex items-center gap-1">
+                              {rec.trend === 'up' ? <ArrowUp className="w-4 h-4 text-green-500" /> : <ArrowDown className="w-4 h-4 text-red-500" />}
+                              <span className="text-xs text-gray-500 capitalize">{rec.trend}</span>
+                            </div>
                           </TableCell>
                           <TableCell>{rec.suggestion}</TableCell>
                           <TableCell>
-                            <Badge
-                              variant={
-                                rec.urgency === 'high'
-                                  ? 'destructive'
-                                  : rec.urgency === 'medium'
-                                  ? 'default'
-                                  : 'secondary'
-                              }
-                              className="rounded-lg"
-                            >
+                            <Badge variant={rec.urgency === 'high' ? 'destructive' : rec.urgency === 'medium' ? 'default' : 'secondary'}>
                               {rec.urgency}
                             </Badge>
                           </TableCell>
