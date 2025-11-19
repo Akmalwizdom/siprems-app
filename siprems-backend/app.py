@@ -4,11 +4,9 @@ from flask_cors import CORS
 import json
 import os
 import psycopg2
-import psycopg2.extras 
+import psycopg2.extras
 from dotenv import load_dotenv
-import numpy as np
 import datetime
-import random
 import google.generativeai as genai
 from ml_engine import MLEngine
 # --- Inisialisasi Aplikasi Flask & Database ---
@@ -369,112 +367,6 @@ def delete_event(event_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# --- FUNGSI HELPER UNTUK PREDIKSI PROPHET ---
-
-def get_sales_data_from_db(product_sku):
-    """
-    Mengambil data penjualan historis untuk SKU tertentu dari tabel 'transactions'.
-    Data diagregasi per hari (ds) dan jumlah penjualan (y) sesuai format Prophet.
-    """
-    try:
-        query = """
-            SELECT 
-                DATE(t.transaction_date) as ds,
-                SUM(t.quantity_sold) as y
-            FROM transactions t
-            JOIN products p ON t.product_id = p.product_id
-            WHERE p.sku = %s
-            GROUP BY DATE(t.transaction_date)
-            ORDER BY ds ASC;
-        """
-        # db_query akan mengembalikan list of dicts
-        data = db_query(query, (product_sku,), fetch_all=True)
-        
-        # Konversi ke DataFrame Pandas
-        df = pd.DataFrame(data)
-        
-        # Pastikan kolom 'y' adalah numerik dan 'ds' adalah datetime
-        if not df.empty:
-            # Konversi kolom 'ds' (yang mungkin bertipe object/date) ke datetime64[ns]
-            df['ds'] = pd.to_datetime(df['ds'])
-            df['y'] = pd.to_numeric(df['y'])
-        
-        return df
-        
-    except Exception as e:
-        print(f"Error saat mengambil data penjualan: {e}")
-        return pd.DataFrame() 
-
-def get_holidays_from_db():
-    """
-    Mengambil data hari libur dan acara kustom dari tabel 'events'
-    untuk digunakan oleh model Prophet.
-    """
-    try:
-        query = """
-            SELECT 
-                event_name as holiday, 
-                event_date as ds 
-            FROM events
-            WHERE include_in_prediction = TRUE;
-        """
-        data = db_query(query, fetch_all=True)
-        
-        # Konversi ke DataFrame Pandas
-        df = pd.DataFrame(data)
-        
-        # Pastikan 'ds' adalah datetime
-        if not df.empty:
-            df['ds'] = pd.to_datetime(df['ds'])
-            
-        return df
-        
-    except Exception as e:
-        print(f"Error saat mengambil data hari libur: {e}")
-        return pd.DataFrame() # Kembalikan DataFrame kosong jika error
-
-def get_current_stock_from_db(product_sku):
-    """
-    Mengambil informasi nama dan stok produk saat ini berdasarkan SKU.
-    """
-    try:
-        query = "SELECT name, stock FROM products WHERE sku = %s;"
-        # fetch_all=False akan mengembalikan satu dict
-        product_info = db_query(query, (product_sku,), fetch_all=False)
-        
-        if not product_info:
-            raise Exception(f"Info produk tidak ditemukan untuk SKU: {product_sku}")
-            
-        # Konversi dari RealDictRow ke dict standar
-        return dict(product_info)
-        
-    except Exception as e:
-        print(f"Error saat mengambil info stok: {e}")
-        return None
-
-def run_prediction(product_sales_df, holidays_df, days_to_forecast=7):
-    """
-    Menjalankan model Prophet AI untuk memprediksi penjualan.
-    """
-    # Inisialisasi model dengan musiman (seasonality)
-    model = Prophet(
-        holidays=holidays_df if not holidays_df.empty else None,
-        daily_seasonality=False,
-        weekly_seasonality=True,  # Menangkap tren mingguan (misal: weekend vs weekday)
-        yearly_seasonality=True,  # Menangkap tren tahunan (misal: liburan akhir tahun)
-        changepoint_prior_scale=0.05
-    )
-    
-    # Masukkan data penjualan ke model
-    model.fit(product_sales_df)
-    
-    # Buat kerangka data (DataFrame) untuk 7 hari ke depan
-    future = model.make_future_dataframe(periods=days_to_forecast)
-    
-    # Lakukan prediksi
-    forecast = model.predict(future)
-    
-    return forecast
 
 # --- ENDPOINT PREDIKSI ---
 @app.route('/predict', methods=['POST'])
@@ -483,67 +375,74 @@ def predict_stock():
         data = request.get_json()
         if not data or 'product_sku' not in data:
             return jsonify({'error': 'Product SKU is required.'}), 400
-            
+
         product_sku = data['product_sku']
         forecast_days = int(data.get('days', 7))
-        
-        # 1. Jalankan Prediksi
+
+        # Validate product exists
+        product_info_query = "SELECT name, stock FROM products WHERE sku = %s"
+        product_info = db_query(product_info_query, (product_sku,), fetch_all=False)
+
+        if not product_info:
+            return jsonify({'error': f'Product with SKU {product_sku} not found.'}), 404
+
+        # 1. Run Prediction using ML Engine
         forecast = ml_engine.predict(product_sku, days=forecast_days)
-        
-        # Pastikan kolom ds bertipe datetime
+
+        # Ensure ds column is datetime
         forecast['ds'] = pd.to_datetime(forecast['ds'])
-        
-        # 2. Ambil data aktual
+
+        # 2. Get actual historical data
         actual_df = ml_engine.get_sales_data(product_sku)
         if not actual_df.empty:
             actual_df['ds'] = pd.to_datetime(actual_df['ds'])
-        
-        # 3. Format Data untuk Grafik (Logic View Dinamis)
-        # Gunakan tanggal terakhir dari PREDIKSI, bukan hari ini
-        last_date = forecast['ds'].max()
-        view_range_days = forecast_days + 30 # Lihat 30 hari ke belakang
-        
-        # Hitung start date relatif terhadap data terakhir
-        start_view_date = last_date - pd.Timedelta(days=view_range_days)
-        
-        # Filter data
-        view_df = forecast[forecast['ds'] >= start_view_date].copy()
-        
+
+        # 3. Format data for chart
+        # Show historical data + forecast
+        # Get the earliest date from actual data, or use a reasonable lookback
+        if not actual_df.empty:
+            earliest_actual = actual_df['ds'].min()
+        else:
+            earliest_actual = forecast['ds'].min() - pd.Timedelta(days=30)
+
+        # Start from the earliest actual date (or 30 days before forecast start if no actual data)
+        chart_df = forecast[forecast['ds'] >= earliest_actual].copy()
+
+        # Create mapping of actual values by date
         actual_map = {}
         if not actual_df.empty:
             actual_map = {d.strftime('%Y-%m-%d'): val for d, val in zip(actual_df['ds'], actual_df['y'])}
-        
+
+        # Build chart data
         chart_data = []
-        for _, row in view_df.iterrows():
+        for _, row in chart_df.iterrows():
             date_str = row['ds'].strftime('%Y-%m-%d')
             actual_val = actual_map.get(date_str, None)
-            
+
             chart_data.append({
                 'date': date_str,
                 'actual': actual_val,
-                'predicted': round(row['yhat_corrected']),
-                'lower': round(row['yhat_lower_corrected']),
-                'upper': round(row['yhat_upper_corrected'])
+                'predicted': float(row['yhat_corrected']),
+                'lower': float(row['yhat_lower_corrected']),
+                'upper': float(row['yhat_upper_corrected'])
             })
 
-        # 4. Buat Rekomendasi Restock (PERBAIKAN LOGIKA)
-        product_info_query = "SELECT name, stock FROM products WHERE sku = %s"
-        product_info = db_query(product_info_query, (product_sku,), fetch_all=False)
-        
-        # [FIX] Ambil n hari terakhir sebagai prediksi masa depan
-        # Karena Prophet append future dates di akhir dataframe
-        future_days_df = forecast.tail(forecast_days)
-        
-        # Hitung total prediksi
-        total_predicted_sales = future_days_df['yhat_corrected'].sum()
-        
-        # Buffer stok
+        if not chart_data:
+            return jsonify({'error': 'No forecast data could be generated.'}), 400
+
+        # 4. Generate restock recommendations
+        # Get future forecast (last N days)
+        future_forecast = forecast.tail(forecast_days)
+
+        total_predicted_sales = future_forecast['yhat_corrected'].sum()
+
+        # Calculate buffer
         buffer_percent = 1.2 if forecast_days <= 7 else 1.1
-        optimal_stock = round(total_predicted_sales * buffer_percent)
-        current_stock = product_info['stock']
-        
+        optimal_stock = int(round(total_predicted_sales * buffer_percent))
+        current_stock = int(product_info['stock'])
+
         gap = optimal_stock - current_stock
-        
+
         if gap > 0:
             suggestion = f"Restock +{int(gap)} unit"
             urgency = "high" if gap > current_stock else "medium"
@@ -556,22 +455,22 @@ def predict_stock():
         recommendations = [{
             'product': product_info['name'],
             'current': current_stock,
-            'optimal': int(optimal_stock),
+            'optimal': optimal_stock,
             'trend': trend,
             'suggestion': suggestion,
             'urgency': urgency
         }]
 
-        # Ambil Akurasi
-        accuracy_score = 0
+        # 5. Get model accuracy from metadata
+        accuracy_score = 0.0
         meta_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "meta", f"meta_{product_sku}.json")
         if os.path.exists(meta_path):
             try:
                 with open(meta_path, 'r') as f:
                     meta = json.load(f)
-                    accuracy_score = meta.get('accuracy_score', 0)
-            except:
-                pass
+                    accuracy_score = meta.get('accuracy_score', 0.0)
+            except Exception as meta_err:
+                print(f"Warning: Could not load metadata: {meta_err}")
 
         return jsonify({
             'chartData': chart_data,
