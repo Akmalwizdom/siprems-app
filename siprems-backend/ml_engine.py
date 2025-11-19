@@ -148,48 +148,54 @@ class MLEngine:
         model_path = os.path.join(MODELS_DIR, f"model_{product_sku}.json")
         meta_path = os.path.join(META_DIR, f"meta_{product_sku}.json")
 
-        # Latih model jika belum ada
+        # Train model if it doesn't exist
         if not os.path.exists(model_path):
             res = self.train_product_model(product_sku)
             if res['status'] != 'success':
-                raise Exception("Data tidak cukup untuk prediksi.")
+                raise Exception(f"Insufficient data to train model for product {product_sku}. Need at least 5 days of sales history.")
 
         # Load Model
         with open(model_path, 'r') as f:
             model = model_from_json(f.read())
-        
-        # Load Correction Factor (Default 1.0 jika gagal load)
+
+        # Load Correction Factor & Accuracy (defaults if not found)
         correction_factor = 1.0
         accuracy_score = 0.0
-        
-        if os.path.exists(meta_path):
-            with open(meta_path, 'r') as f:
-                meta = json.load(f)
-                correction_factor = meta.get('correction_factor', 1.0)
-                accuracy_score = meta.get('accuracy_score', 0.0)
 
-        # Buat DataFrame Masa Depan
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r') as f:
+                    meta = json.load(f)
+                    correction_factor = float(meta.get('correction_factor', 1.0))
+                    accuracy_score = float(meta.get('accuracy_score', 0.0))
+            except Exception as e:
+                logging.warning(f"Could not load metadata for {product_sku}: {e}. Using defaults.")
+
+        # Create future dataframe
         future = model.make_future_dataframe(periods=days)
-        
-        # Handling Promo Masa Depan
+
+        # Handle promo status for future dates
         df_history = self.get_sales_data(product_sku)
-        promo_map = dict(zip(df_history['ds'], df_history['promo']))
-        future['promo'] = future['ds'].map(promo_map).fillna(0)
-        
-        # Prediksi
+        if not df_history.empty and 'promo' in df_history.columns:
+            promo_map = dict(zip(df_history['ds'], df_history['promo']))
+            future['promo'] = future['ds'].map(promo_map).fillna(0)
+        else:
+            future['promo'] = 0
+
+        # Run prediction
         forecast = model.predict(future)
 
-        # Terapkan Faktor Koreksi & Inverse Log
-        forecast['yhat_corrected'] = np.expm1(forecast['yhat']) * correction_factor
-        forecast['yhat_lower_corrected'] = np.expm1(forecast['yhat_lower']) * correction_factor
-        forecast['yhat_upper_corrected'] = np.expm1(forecast['yhat_upper']) * correction_factor
+        # Apply correction factor and inverse log transform
+        forecast['yhat_corrected'] = np.expm1(forecast['yhat'].values) * correction_factor
+        forecast['yhat_lower_corrected'] = np.expm1(forecast['yhat_lower'].values) * correction_factor
+        forecast['yhat_upper_corrected'] = np.expm1(forecast['yhat_upper'].values) * correction_factor
 
-        # Pastikan tidak ada nilai negatif
+        # Ensure no negative values
         cols = ['yhat_corrected', 'yhat_lower_corrected', 'yhat_upper_corrected']
         for col in cols:
             forecast[col] = forecast[col].clip(lower=0)
-        
-        # Kembalikan juga nilai akurasi untuk ditampilkan di Frontend (opsional)
+
+        # Add accuracy for frontend display
         forecast['accuracy_score'] = accuracy_score
 
         return forecast
