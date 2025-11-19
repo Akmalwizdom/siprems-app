@@ -40,10 +40,11 @@ class MLEngine:
 
     def get_sales_data(self, product_sku):
         """
-        Mengambil data penjualan beserta status promo.
+        Fetch sales data with promo status, aggregated by day.
+        Returns DataFrame with ds (date), y (quantity), and promo (status) columns.
         """
         query = """
-            SELECT 
+            SELECT
                 DATE(t.transaction_date) as ds,
                 SUM(t.quantity_sold) as y,
                 MAX(CASE WHEN t.is_promo THEN 1 ELSE 0 END) as promo
@@ -53,12 +54,19 @@ class MLEngine:
             GROUP BY DATE(t.transaction_date)
             ORDER BY ds ASC;
         """
-        df = pd.DataFrame(self.get_db_connection(query, (product_sku,), fetch_all=True))
-        if not df.empty:
-            df['ds'] = pd.to_datetime(df['ds'])
-            df['y'] = pd.to_numeric(df['y'])
-            df['promo'] = pd.to_numeric(df['promo'])
-        return df
+        try:
+            result = self.get_db_connection(query, (product_sku,), fetch_all=True)
+            df = pd.DataFrame(result) if result else pd.DataFrame()
+
+            if not df.empty:
+                df['ds'] = pd.to_datetime(df['ds'])
+                df['y'] = pd.to_numeric(df['y'], errors='coerce').fillna(0).astype(int)
+                df['promo'] = pd.to_numeric(df['promo'], errors='coerce').fillna(0).astype(int)
+
+            return df
+        except Exception as e:
+            logging.error(f"Error fetching sales data for {product_sku}: {e}")
+            return pd.DataFrame()
 
     def get_holidays(self):
         """Mengambil data hari libur."""
