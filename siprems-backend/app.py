@@ -1,7 +1,6 @@
 import pandas as pd
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from prophet import Prophet
 import os
 import psycopg2
 import psycopg2.extras 
@@ -10,7 +9,7 @@ import numpy as np
 import datetime
 import random
 import google.generativeai as genai
-
+from ml_engine import MLEngine
 # --- Inisialisasi Aplikasi Flask & Database ---
 load_dotenv()  # Memuat variabel dari file .env
 # --- KONFIGURASI GEMINI AI ---
@@ -62,7 +61,7 @@ def get_db_connection():
         password=os.getenv('DB_PASSWORD')
     )
     return conn
-
+ml_engine = MLEngine(get_db_connection)
 # --- HELPER DATABASE BARU ---
 def db_query(query, params=None, fetch_all=True):
     """Fungsi helper untuk menjalankan query dan mengembalikan hasil sebagai dict."""
@@ -193,7 +192,8 @@ def get_transactions():
                 t.transaction_date,
                 p.name as product_name, 
                 t.quantity_sold, 
-                t.price_per_unit
+                t.price_per_unit,
+                t.is_promo
             FROM transactions t
             JOIN products p ON t.product_id = p.product_id
             ORDER BY t.transaction_date DESC
@@ -209,14 +209,8 @@ def get_transactions():
 
 @app.route('/transactions', methods=['POST'])
 def add_transaction():
-    """
-    [CREATE] - Menambah transaksi baru.
-    Ini juga akan mengurangi stok produk terkait.
-    """
     try:
         data = request.get_json()
-        
-        # 1. Dapatkan product_id dan harga dari 'sku' yang dikirim
         product_query = "SELECT product_id, price, stock FROM products WHERE sku = %s;"
         product = db_query(product_query, (data['product_sku'],), fetch_all=False)
         
@@ -224,36 +218,31 @@ def add_transaction():
             return jsonify({'error': 'Product SKU not found'}), 404
         
         quantity_to_sell = int(data['quantity'])
+        # [MODIFIKASI] Ambil status promo dari request, default False
+        is_promo = data.get('is_promo', False) 
         
-        # 2. Cek apakah stok mencukupi
         if product['stock'] < quantity_to_sell:
             return jsonify({'error': f"Stok tidak mencukupi. Sisa stok: {product['stock']}"}), 400
             
-        # 3. Masukkan ke tabel transactions
         insert_query = """
-            INSERT INTO transactions (product_id, quantity_sold, price_per_unit, transaction_date)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO transactions (product_id, quantity_sold, price_per_unit, transaction_date, is_promo)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING *;
         """
         params = (
             product['product_id'],
             quantity_to_sell,
-            product['price'],  # Gunakan harga dari database
-            datetime.datetime.now(datetime.timezone.utc)  # Selalu gunakan UTC
+            product['price'],
+            datetime.datetime.now(datetime.timezone.utc),
+            is_promo # [MODIFIKASI] Simpan ke DB
         )
         new_transaction = dict(db_query(insert_query, params, fetch_all=False))
         new_transaction['transaction_date'] = new_transaction['transaction_date'].isoformat()
         
-        # 4. Kurangi stok produk
-        stock_query = """
-            UPDATE products SET stock = stock - %s WHERE product_id = %s;
-        """
+        stock_query = "UPDATE products SET stock = stock - %s WHERE product_id = %s;"
         db_query(stock_query, (quantity_to_sell, product['product_id']), fetch_all=False)
         
-        # Mengembalikan data transaksi yang baru saja dibuat
-        # Kita tambahkan 'product_name' secara manual untuk frontend
         new_transaction['product_name'] = product['name'] 
-        
         return jsonify(new_transaction), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -489,82 +478,68 @@ def run_prediction(product_sales_df, holidays_df, days_to_forecast=7):
 # --- ENDPOINT PREDIKSI ---
 @app.route('/predict', methods=['POST'])
 def predict_stock():
-    """
-    [UPDATE] - Menjalankan prediksi Prophet untuk SKU produk tertentu.
-    """
     try:
-        # --- PERUBAHAN DI SINI ---
-        # Ambil SKU dari JSON body yang dikirim frontend
         data = request.get_json()
         if not data or 'product_sku' not in data:
             return jsonify({'error': 'Product SKU is required.'}), 400
             
-        product_sku_to_predict = data['product_sku']
-        # --- BATAS PERUBAHAN ---
-
+        product_sku = data['product_sku']
         
-        # --- (Tahap 1 dari Flowchart - Mengambil data dari DB) ---
-        product_sales_df = get_sales_data_from_db(product_sku_to_predict)
-        holidays_df = get_holidays_from_db()
-        product_info = get_current_stock_from_db(product_sku_to_predict)
+        # 1. Jalankan Prediksi via ML Engine (V4 Logic + Promo Regressor)
+        forecast = ml_engine.predict(product_sku, days=7)
         
-        if product_sales_df.empty or len(product_sales_df) < 2:
-            return jsonify({'error': f'Not enough sales data for {product_info.get("name", product_sku_to_predict)} to predict.'}), 400
-
-        # --- (Tahap 2 dari Flowchart - Menjalankan Model AI) ---
-        forecast = run_prediction(product_sales_df, holidays_df, days_to_forecast=7)
+        # 2. Ambil data aktual untuk visualisasi
+        actual_df = ml_engine.get_sales_data(product_sku)
         
-        # --- (Tahap 3 dari Flowchart: Memformat Hasil Sesuai Frontend) ---
+        # 3. Format Data untuk Frontend
+        last_date = forecast['ds'].max()
+        start_view_date = last_date - datetime.timedelta(days=14)
+        view_df = forecast[forecast['ds'] >= start_view_date].copy()
         
-        # 1. Menyiapkan Data untuk Grafik (Chart Data)
-        actual_data = product_sales_df.rename(columns={'y': 'actual'})
-        forecast_with_actual = forecast.merge(actual_data, on='ds', how='left')
-        chart_data_raw = forecast_with_actual.tail(12) # 5 hari histori + 7 hari prediksi
+        actual_map = {d.strftime('%Y-%m-%d'): val for d, val in zip(actual_df['ds'], actual_df['y'])}
         
         chart_data = []
-        for _, row in chart_data_raw.iterrows():
+        for _, row in view_df.iterrows():
+            date_str = row['ds'].strftime('%Y-%m-%d')
+            actual_val = actual_map.get(date_str, None)
+            
             chart_data.append({
-                'date': row['ds'].strftime('%Y-%m-%d'),
-                'actual': round(row['actual']) if pd.notna(row['actual']) else None,
-                # Pastikan prediksi tidak negatif
-                'predicted': max(0, round(row['yhat'])),
-                'lower': max(0, round(row['yhat_lower'])),
-                'upper': max(0, round(row['yhat_upper']))
+                'date': date_str,
+                'actual': actual_val,
+                'predicted': round(row['yhat_corrected']),
+                'lower': round(row['yhat_lower_corrected']),
+                'upper': round(row['yhat_upper_corrected'])
             })
 
-        # 2. Menyiapkan Data untuk Rekomendasi (Recommendations Table)
-        prediction_only = forecast.iloc[-7:]
-        # Pastikan total prediksi tidak negatif
-        total_predicted_sales = max(0, prediction_only['yhat'].sum())
+        # 4. Buat Rekomendasi Restock
+        product_info_query = "SELECT name, stock FROM products WHERE sku = %s"
+        product_info = db_query(product_info_query, (product_sku,), fetch_all=False)
         
-        safety_stock_factor = 1.20 
-        optimal_stock = round(total_predicted_sales * safety_stock_factor)
+        future_days = forecast.iloc[-7:]
+        total_predicted_sales = future_days['yhat_corrected'].sum()
         
-        current_product_stock = product_info['stock']
-        suggestion_amount = optimal_stock - current_product_stock
+        optimal_stock = round(total_predicted_sales * 1.2)
+        current_stock = product_info['stock']
         
-        if suggestion_amount <= 0:
-            suggestion_text = "Stok Cukup"
-            urgency = "low"
-            # Jika stok berlebih (lebih dari 50% di atas optimal)
-            if current_product_stock > optimal_stock * 1.5:
-                 suggestion_text = "Stok Berlebih"
-                 urgency = "low"
+        gap = optimal_stock - current_stock
+        
+        if gap > 0:
+            suggestion = f"Restock +{int(gap)} unit"
+            urgency = "high" if gap > current_stock else "medium"
+            trend = "up"
         else:
-            suggestion_text = f"Restock +{suggestion_amount} unit"
-            urgency = "high" if suggestion_amount > current_product_stock * 0.75 else "medium"
+            suggestion = "Stok Aman"
+            urgency = "low"
+            trend = "down" if total_predicted_sales < current_stock * 0.5 else "up"
 
-        recommendations = [
-            {
-                'product': product_info['name'],
-                'current': current_product_stock,
-                'optimal': optimal_stock,
-                'trend': 'up' if prediction_only.iloc[-1]['yhat'] > prediction_only.iloc[0]['yhat'] else 'down',
-                'suggestion': suggestion_text,
-                'urgency': urgency
-            }
-            # Di aplikasi nyata, Anda bisa mem-passing list of SKU dan me-looping ini
-        ]
+        recommendations = [{
+            'product': product_info['name'],
+            'current': current_stock,
+            'optimal': int(optimal_stock),
+            'trend': trend,
+            'suggestion': suggestion,
+            'urgency': urgency
+        }]
 
         return jsonify({
             'chartData': chart_data,
@@ -572,7 +547,8 @@ def predict_stock():
         })
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500 
+        print(f"Prediction Error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/chat', methods=['POST'])
 def chat_with_ai():

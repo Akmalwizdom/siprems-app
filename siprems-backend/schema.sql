@@ -7,7 +7,7 @@ DROP TYPE IF EXISTS event_type;
 -- Tipe kustom untuk 'holiday' atau 'custom'
 CREATE TYPE event_type AS ENUM ('holiday', 'custom');
 
--- Tabel untuk Produk (dari ProductsPage.tsx)
+-- Tabel untuk Produk
 CREATE TABLE products (
     product_id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -19,20 +19,20 @@ CREATE TABLE products (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Tabel untuk Transaksi / Penjualan (dari TransactionsPage.tsx)
--- Ini adalah data INTI untuk model Prophet
+-- Tabel untuk Transaksi / Penjualan
 CREATE TABLE transactions (
     transaction_id SERIAL PRIMARY KEY,
     product_id INT NOT NULL,
     quantity_sold INT NOT NULL,
     price_per_unit NUMERIC(10, 2) NOT NULL,
     transaction_date TIMESTAMP WITH TIME ZONE NOT NULL,
+    is_promo BOOLEAN DEFAULT FALSE, 
     
     -- Membuat relasi ke tabel products
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE RESTRICT
 );
 
--- Tabel untuk Acara & Hari Libur (dari CalendarPage.tsx & flowchart)
+-- Tabel untuk Acara & Hari Libur
 CREATE TABLE events (
     event_id SERIAL PRIMARY KEY,
     event_name VARCHAR(255) NOT NULL,
