@@ -72,7 +72,8 @@ class MLEngine:
 
     def train_product_model(self, product_sku):
         """
-        Logika Training V4 + Promo Regressor + Metrik Akurasi
+        Train model with promo regressor and accuracy metrics.
+        Includes log transformation, outlier removal, and correction factor calculation.
         """
         df = self.get_sales_data(product_sku)
         holidays = self.get_holidays()
@@ -80,66 +81,83 @@ class MLEngine:
         if df.empty or len(df) < 5:
             return {"status": "skipped", "reason": "Not enough data"}
 
-        # 1. Preprocessing: Log Transform
-        df['y_log'] = np.log1p(df['y'])
-        
-        # 2. Preprocessing: Outlier Removal (Sigma 3.5)
-        mu = df['y_log'].mean()
-        std = df['y_log'].std()
-        if std > 0:
-            df = df[np.abs(df['y_log'] - mu) <= (3.5 * std)].copy()
+        try:
+            # 1. Log Transform (to stabilize variance)
+            df['y_log'] = np.log1p(df['y'])
 
-        # 3. Konfigurasi Model Prophet
-        model = Prophet(
-            yearly_seasonality=True,
-            weekly_seasonality=True,
-            daily_seasonality=False,
-            seasonality_mode='multiplicative', 
-            changepoint_prior_scale=0.05, 
-            holidays=holidays,
-            holidays_prior_scale=10.0 
-        )
-        
-        model.add_seasonality(name='monthly', period=30.5, fourier_order=15)
-        model.add_regressor('promo')
+            # 2. Outlier Removal (3.5 sigma)
+            mu = df['y_log'].mean()
+            std = df['y_log'].std()
+            if std > 0:
+                df = df[np.abs(df['y_log'] - mu) <= (3.5 * std)].copy()
 
-        # Fit Model
-        df_fit = df[['ds', 'y_log', 'promo']].rename(columns={'y_log': 'y'})
-        model.fit(df_fit)
+            # Ensure we still have minimum data
+            if len(df) < 5:
+                return {"status": "skipped", "reason": "Not enough data after outlier removal"}
 
-        # 4. Evaluasi Model & Hitung Faktor Koreksi
-        forecast = model.predict(df_fit)
-        y_pred = np.expm1(forecast['yhat'].values)
-        y_true = np.expm1(df_fit['y'].values)
-        
-        # Hitung Faktor Koreksi (WAJIB DILAKUKAN SEBELUM DISIMPAN)
-        ratios = y_true / (y_pred + 1e-6)
-        correction_factor = float(np.median(ratios))
-        correction_factor = max(0.90, min(1.10, correction_factor))
+            # 3. Configure Prophet model
+            model = Prophet(
+                yearly_seasonality=True,
+                weekly_seasonality=True,
+                daily_seasonality=False,
+                seasonality_mode='multiplicative',
+                changepoint_prior_scale=0.05,
+                holidays=holidays,
+                holidays_prior_scale=10.0,
+                interval_width=0.95
+            )
 
-        # Hitung Metrik Akurasi (MAE & MAPE)
-        mae = mean_absolute_error(y_true, y_pred)
-        mape = mean_absolute_percentage_error(y_true, y_pred)
-        accuracy_score = max(0, 100 * (1 - mape)) # Pastikan tidak negatif
+            model.add_seasonality(name='monthly', period=30.5, fourier_order=15)
+            model.add_regressor('promo')
 
-        # Simpan Model
-        with open(os.path.join(MODELS_DIR, f"model_{product_sku}.json"), "w") as f:
-            f.write(model_to_json(model))
-            
-        # Simpan Metadata (Termasuk Correction Factor & Akurasi)
-        with open(os.path.join(META_DIR, f"meta_{product_sku}.json"), "w") as f:
-            json.dump({
-                "correction_factor": correction_factor,
-                "mae": mae,
-                "mape_percent": mape * 100,
-                "accuracy_score": accuracy_score
-            }, f)
+            # 4. Prepare data and fit
+            df_fit = df[['ds', 'y_log', 'promo']].rename(columns={'y_log': 'y'})
 
-        return {
-            "status": "success", 
-            "factor": correction_factor,
-            "accuracy": accuracy_score
-        }
+            # Suppress Prophet warnings during training
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model.fit(df_fit)
+
+            # 5. Evaluate and calculate correction factor
+            forecast = model.predict(df_fit)
+            y_pred = np.expm1(forecast['yhat'].values)
+            y_true = np.expm1(df_fit['y'].values)
+
+            # Calculate correction factor (median ratio)
+            ratios = y_true / (y_pred + 1e-6)
+            correction_factor = float(np.median(ratios))
+            correction_factor = max(0.85, min(1.15, correction_factor))  # Clamp between 0.85 and 1.15
+
+            # 6. Calculate accuracy metrics
+            mae = mean_absolute_error(y_true, y_pred)
+            mape = mean_absolute_percentage_error(y_true, y_pred)
+            accuracy_score = max(0, 100 * (1 - min(mape, 1.0)))  # Cap MAPE at 100%
+
+            # 7. Save model
+            with open(os.path.join(MODELS_DIR, f"model_{product_sku}.json"), "w") as f:
+                f.write(model_to_json(model))
+
+            # 8. Save metadata
+            with open(os.path.join(META_DIR, f"meta_{product_sku}.json"), "w") as f:
+                json.dump({
+                    "correction_factor": correction_factor,
+                    "mae": float(mae),
+                    "mape_percent": float(mape * 100),
+                    "accuracy_score": float(accuracy_score)
+                }, f, indent=2)
+
+            logging.info(f"Model trained for {product_sku}: accuracy={accuracy_score:.1f}%, correction_factor={correction_factor:.3f}")
+
+            return {
+                "status": "success",
+                "factor": correction_factor,
+                "accuracy": accuracy_score
+            }
+
+        except Exception as e:
+            logging.error(f"Error training model for {product_sku}: {e}")
+            return {"status": "error", "reason": str(e)}
 
     def predict(self, product_sku, days=7):
         """
