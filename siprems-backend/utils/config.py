@@ -37,6 +37,10 @@ class Config:
     RATELIMIT_STORAGE_URL = os.getenv('RATELIMIT_STORAGE_URL', 'memory://')
     RATELIMIT_DEFAULT = '100/hour'
 
+    # Redis Caching Configuration
+    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/2')
+    CACHE_ENABLED = os.getenv('CACHE_ENABLED', 'true').lower() == 'true'
+
     # Flask Configuration
     JSON_SORT_KEYS = False
 

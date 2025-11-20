@@ -3,7 +3,10 @@ from flask_cors import CORS
 from flask_talisman import Talisman
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_compress import Compress
 from utils.config import get_config
+from utils.cache_service import init_cache
+from utils.metrics_service import init_metrics, get_metrics_service
 from ml_engine import MLEngine
 from utils.db import get_db_connection
 from services.prediction_service import PredictionService
@@ -36,6 +39,9 @@ def create_app(config=None):
     if config is None:
         config = get_config()
     app.config.from_object(config)
+
+    # Initialize response compression
+    Compress(app)
 
     # Configure CORS with whitelist
     cors_config = {
@@ -70,6 +76,14 @@ def create_app(config=None):
         storage_uri=config.RATELIMIT_STORAGE_URL
     )
 
+    # Initialize cache service
+    cache_service = init_cache(config)
+    app.cache_service = cache_service
+
+    # Initialize metrics service
+    metrics_service = init_metrics()
+    app.metrics_service = metrics_service
+
     # Initialize services
     ml_engine = MLEngine(get_db_connection)
     app.ml_engine = ml_engine
@@ -94,6 +108,17 @@ def create_app(config=None):
     @app.route('/health', methods=['GET'])
     def health():
         return jsonify({'status': 'healthy'}), 200
+
+    # Metrics endpoint
+    @app.route('/metrics', methods=['GET'])
+    def metrics():
+        metrics_service = get_metrics_service()
+        return jsonify(metrics_service.export_metrics()), 200
+
+    # Cache stats endpoint
+    @app.route('/cache-stats', methods=['GET'])
+    def cache_stats():
+        return jsonify(cache_service.get_stats()), 200
 
     # Error handlers
     @app.errorhandler(429)
