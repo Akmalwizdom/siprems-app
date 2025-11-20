@@ -80,6 +80,10 @@ def create_app(config=None):
     cache_service = init_cache(config)
     app.cache_service = cache_service
 
+    # Initialize metrics service
+    metrics_service = init_metrics()
+    app.metrics_service = metrics_service
+
     # Initialize services
     ml_engine = MLEngine(get_db_connection)
     app.ml_engine = ml_engine
