@@ -39,6 +39,9 @@ def create_app(config=None):
         config = get_config()
     app.config.from_object(config)
 
+    # Initialize response compression
+    Compress(app)
+
     # Configure CORS with whitelist
     cors_config = {
         'origins': config.CORS_ALLOWED_ORIGINS,
