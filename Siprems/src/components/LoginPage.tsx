@@ -127,6 +127,12 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </p>
             </div>
 
+            {error && (
+              <div className={`mb-4 p-3 rounded-lg ${error.includes('successful') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {error}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {isRegister && (
                 <div className="space-y-2">
@@ -138,6 +144,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
+                    disabled={isLoading}
                     className="rounded-xl"
                   />
                 </div>
@@ -152,6 +159,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  disabled={isLoading}
                   className="rounded-xl"
                 />
               </div>
@@ -165,20 +173,29 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  disabled={isLoading}
                   className="rounded-xl"
                 />
               </div>
 
-              <Button type="submit" className="w-full rounded-xl bg-blue-500 hover:bg-blue-600">
-                {isRegister ? 'Create Account' : 'Sign In'}
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full rounded-xl bg-blue-500 hover:bg-blue-600 disabled:opacity-50"
+              >
+                {isLoading ? 'Please wait...' : (isRegister ? 'Create Account' : 'Sign In')}
               </Button>
             </form>
 
             <div className="mt-6 text-center">
               <button
                 type="button"
-                onClick={() => setIsRegister(!isRegister)}
-                className="text-blue-500 hover:text-blue-600 transition-colors"
+                onClick={() => {
+                  setIsRegister(!isRegister);
+                  setError('');
+                }}
+                disabled={isLoading}
+                className="text-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50"
               >
                 {isRegister
                   ? 'Already have an account? Sign in'
