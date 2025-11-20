@@ -14,33 +14,42 @@ def register():
     """Register a new user"""
     try:
         # Validate request data
-        schema = AuthRegisterSchema()
         data = request.get_json() or {}
-        
+
         valid, validated_data, errors = validate_request_data(AuthRegisterSchema, data)
         if not valid:
-            return jsonify({'error': 'Validation failed', 'details': errors}), 400
-        
+            # Extract first validation error for cleaner message
+            error_msg = 'Invalid input'
+            if isinstance(errors, dict):
+                for field, messages in errors.items():
+                    if isinstance(messages, list) and messages:
+                        error_msg = messages[0]
+                        break
+                    elif isinstance(messages, str):
+                        error_msg = messages
+                        break
+            return jsonify({'message': error_msg}), 400
+
         # Register user
         user = UserService.register_user(
             email=validated_data['email'],
             full_name=validated_data['full_name'],
             password=validated_data['password']
         )
-        
+
         return jsonify({
-            'message': 'User registered successfully',
+            'message': 'Registration successful',
             'user': {
                 'user_id': user.get('user_id'),
                 'email': user.get('email'),
                 'full_name': user.get('full_name')
             }
         }), 201
-    
+
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'message': str(e)}), 400
     except Exception as e:
-        return jsonify({'error': 'Registration failed', 'details': str(e)}), 500
+        return jsonify({'message': 'Registration failed'}), 500
 
 
 @auth_bp.route('/login', methods=['POST'])
