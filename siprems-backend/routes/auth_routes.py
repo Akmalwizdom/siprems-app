@@ -60,20 +60,30 @@ def login():
         data = request.get_json() or {}
         valid, validated_data, errors = validate_request_data(AuthLoginSchema, data)
         if not valid:
-            return jsonify({'error': 'Validation failed', 'details': errors}), 400
-        
+            # Extract first validation error for cleaner message
+            error_msg = 'Invalid input'
+            if isinstance(errors, dict):
+                for field, messages in errors.items():
+                    if isinstance(messages, list) and messages:
+                        error_msg = messages[0]
+                        break
+                    elif isinstance(messages, str):
+                        error_msg = messages
+                        break
+            return jsonify({'message': error_msg}), 400
+
         # Authenticate user
         result = UserService.login_user(
             email=validated_data['email'],
             password=validated_data['password']
         )
-        
+
         return jsonify(result), 200
-    
+
     except ValueError as e:
-        return jsonify({'error': str(e)}), 401
+        return jsonify({'message': str(e)}), 401
     except Exception as e:
-        return jsonify({'error': 'Login failed', 'details': str(e)}), 500
+        return jsonify({'message': 'Login failed'}), 500
 
 
 @auth_bp.route('/refresh', methods=['POST'])
