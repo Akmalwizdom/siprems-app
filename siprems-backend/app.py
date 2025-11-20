@@ -104,10 +104,42 @@ def create_app(config=None):
     app.register_blueprint(system_bp)
     app.register_blueprint(task_bp)
 
-    # Health check endpoint
+    # Basic health check endpoint (for load balancer)
     @app.route('/health', methods=['GET'])
     def health():
+        """Fast health check for load balancer"""
         return jsonify({'status': 'healthy'}), 200
+
+    # Readiness check endpoint (full dependency check)
+    @app.route('/ready', methods=['GET'])
+    def readiness():
+        """Check if service is ready to serve traffic"""
+        try:
+            # Check database connectivity
+            from utils.db import db_query
+            db_query("SELECT 1", fetch_all=False)
+
+            # Check Redis connectivity
+            cache_service = app.cache_service
+            redis_available = cache_service.is_available()
+
+            # Check Celery connectivity (if needed)
+            chat_available = app.chat_service.is_available()
+
+            return jsonify({
+                'status': 'ready',
+                'checks': {
+                    'database': 'ok',
+                    'redis': 'ok' if redis_available else 'degraded',
+                    'chat_service': 'ok' if chat_available else 'unavailable',
+                    'timestamp': __import__('datetime').datetime.utcnow().isoformat()
+                }
+            }), 200
+        except Exception as e:
+            return jsonify({
+                'status': 'not_ready',
+                'error': str(e)
+            }), 503
 
     # Metrics endpoint
     @app.route('/metrics', methods=['GET'])
