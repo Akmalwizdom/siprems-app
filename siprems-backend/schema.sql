@@ -1,11 +1,26 @@
--- Hapus tabel jika sudah ada (untuk testing ulang)
+-- Drop tables if they exist (for testing)
 DROP TABLE IF EXISTS transactions;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS users;
 DROP TYPE IF EXISTS event_type;
 
--- Tipe kustom untuk 'holiday' atau 'custom'
-CREATE TYPE event_type AS ENUM ('holiday', 'custom');
+-- User table for authentication
+CREATE TABLE users (
+    user_id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create index on email for faster lookups
+CREATE INDEX idx_users_email ON users(email);
+
+-- Enum type for event types
+CREATE TYPE event_type AS ENUM ('holiday', 'promotion', 'seasonal', 'custom');
 
 -- Tabel untuk Produk
 CREATE TABLE products (
