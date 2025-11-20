@@ -10,32 +10,60 @@ The backend has been refactored from a monolithic structure to a modular, scalab
 siprems-backend/
 ├── routes/              # Flask Blueprints for endpoints
 │   ├── __init__.py
+│   ├── auth_routes.py
 │   ├── product_routes.py
 │   ├── transaction_routes.py
 │   ├── event_routes.py
 │   ├── prediction_routes.py
 │   ├── chat_routes.py
-│   └── system_routes.py
+│   ├── system_routes.py
+│   └── task_routes.py
 ├── services/            # Business logic layer
 │   ├── __init__.py
+│   ├── user_service.py
 │   ├── product_service.py
 │   ├── transaction_service.py
 │   ├── event_service.py
 │   ├── prediction_service.py
-│   └── chat_service.py
+│   ├── chat_service.py
+│   └── task_service.py
 ├── models/              # Data access layer
+│   ├── orm/             # SQLAlchemy ORM models
+│   │   ├── __init__.py
+│   │   ├── user.py
+│   │   ├── product.py
+│   │   ├── transaction.py
+│   │   └── event.py
 │   ├── __init__.py
+│   ├── user_model.py
 │   ├── product_model.py
 │   ├── transaction_model.py
 │   └── event_model.py
 ├── utils/               # Utilities and helpers
 │   ├── __init__.py
 │   ├── config.py        # Configuration management
-│   └── db.py            # Database utilities
+│   ├── db.py            # Legacy database utilities
+│   ├── db_session.py    # SQLAlchemy session management
+│   ├── cache_service.py # Redis cache service
+│   ├── metrics_service.py # Metrics collection
+│   └── password_handler.py # Password hashing utilities
+├── tasks/               # Celery tasks
+│   ├── __init__.py
+│   └── ml_tasks.py
+├── nginx/               # Nginx configuration
+│   ├── Dockerfile
+│   └── nginx.conf
+├── pgbouncer/           # PostgreSQL connection pooling
+│   ├── pgbouncer.ini
+│   └── users.txt
 ├── app.py               # Application factory and entry point
+├── celery_app.py        # Celery application setup
 ├── ml_engine.py         # Machine learning engine
 ├── seed.py              # Database seeding script
 ├── schema.sql           # Database schema
+├── docker-compose.yml   # Docker compose configuration
+├── requirements.txt     # Python dependencies
+├── ORM_MIGRATION_GUIDE.md # ORM migration guide
 └── ARCHITECTURE.md      # This file
 ```
 
