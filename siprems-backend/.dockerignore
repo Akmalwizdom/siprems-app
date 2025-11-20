@@ -1,0 +1,83 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+*.pyc
+*.pyo
+__pycache__
+*.egg-info
+.env.local
+.env.*.local
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.hypothesis
+
+# Build artifacts
+build/
+dist/
+*.egg
+*.egg-info
+__pycache__
+
+# Virtual environments
+venv
+env
+ENV
+.venv
+
+# Database and cache
+*.db
+*.sqlite
+*.sqlite3
+pgdata
+redis_data
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+docs
+*.md
+!README.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+
+# Models (if too large) - but keep meta directory
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.pb
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
