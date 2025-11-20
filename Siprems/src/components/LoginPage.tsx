@@ -5,9 +5,27 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card } from './ui/card';
+import { apiClient } from '../utils/api';
 
 interface LoginPageProps {
   onLogin: (username: string) => void;
+}
+
+interface LoginResponse {
+  user_id: number;
+  email: string;
+  full_name: string;
+  access_token: string;
+  refresh_token: string;
+}
+
+interface RegisterResponse {
+  message: string;
+  user: {
+    user_id: number;
+    email: string;
+    full_name: string;
+  };
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
@@ -15,11 +33,52 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const username = isRegister ? name : email.split('@')[0];
-    onLogin(username);
+    setError('');
+    setIsLoading(true);
+
+    try {
+      if (isRegister) {
+        // Register
+        const response = await apiClient.post<RegisterResponse>('/auth/register', {
+          email,
+          password,
+          full_name: name
+        });
+        setError('Registration successful! Please sign in.');
+        setIsRegister(false);
+        setEmail('');
+        setPassword('');
+        setName('');
+      } else {
+        // Login
+        const response = await apiClient.post<LoginResponse>('/auth/login', {
+          email,
+          password
+        });
+
+        // Save tokens and user info
+        apiClient.setTokens({
+          access_token: response.access_token,
+          refresh_token: response.refresh_token
+        });
+        localStorage.setItem('user', JSON.stringify({
+          user_id: response.user_id,
+          email: response.email,
+          full_name: response.full_name
+        }));
+
+        onLogin(response.full_name);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Authentication failed');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -68,6 +127,12 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </p>
             </div>
 
+            {error && (
+              <div className={`mb-4 p-3 rounded-lg ${error.includes('successful') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {error}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {isRegister && (
                 <div className="space-y-2">
@@ -79,6 +144,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
+                    disabled={isLoading}
                     className="rounded-xl"
                   />
                 </div>
@@ -93,6 +159,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  disabled={isLoading}
                   className="rounded-xl"
                 />
               </div>
@@ -106,20 +173,29 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  disabled={isLoading}
                   className="rounded-xl"
                 />
               </div>
 
-              <Button type="submit" className="w-full rounded-xl bg-blue-500 hover:bg-blue-600">
-                {isRegister ? 'Create Account' : 'Sign In'}
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full rounded-xl bg-blue-500 hover:bg-blue-600 disabled:opacity-50"
+              >
+                {isLoading ? 'Please wait...' : (isRegister ? 'Create Account' : 'Sign In')}
               </Button>
             </form>
 
             <div className="mt-6 text-center">
               <button
                 type="button"
-                onClick={() => setIsRegister(!isRegister)}
-                className="text-blue-500 hover:text-blue-600 transition-colors"
+                onClick={() => {
+                  setIsRegister(!isRegister);
+                  setError('');
+                }}
+                disabled={isLoading}
+                className="text-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50"
               >
                 {isRegister
                   ? 'Already have an account? Sign in'

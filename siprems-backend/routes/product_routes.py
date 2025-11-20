@@ -1,9 +1,12 @@
 from flask import Blueprint, request, jsonify
 from services.product_service import ProductService
+from utils.jwt_handler import require_auth
+from utils.validators import ProductSchema, validate_request_data
 
 product_bp = Blueprint('products', __name__, url_prefix='/products')
 
 @product_bp.route('', methods=['GET'])
+@require_auth
 def get_products():
     """Get all products"""
     try:
@@ -13,11 +16,16 @@ def get_products():
         return jsonify({'error': str(e)}), 500
 
 @product_bp.route('', methods=['POST'])
+@require_auth
 def add_product():
     """Create a new product"""
     try:
         data = request.get_json()
-        product = ProductService.create_product(data)
+        valid, validated_data, errors = validate_request_data(ProductSchema, data)
+        if not valid:
+            return jsonify({'error': 'Validation failed', 'details': errors}), 400
+
+        product = ProductService.create_product(validated_data)
         return jsonify(product), 201
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -25,6 +33,7 @@ def add_product():
         return jsonify({'error': str(e)}), 500
 
 @product_bp.route('/<string:sku>', methods=['GET'])
+@require_auth
 def get_product(sku):
     """Get a specific product by SKU"""
     try:
@@ -36,11 +45,16 @@ def get_product(sku):
         return jsonify({'error': str(e)}), 500
 
 @product_bp.route('/<string:sku>', methods=['PUT'])
+@require_auth
 def update_product(sku):
     """Update a product by SKU"""
     try:
         data = request.get_json()
-        product = ProductService.update_product(sku, data)
+        valid, validated_data, errors = validate_request_data(ProductSchema, data)
+        if not valid:
+            return jsonify({'error': 'Validation failed', 'details': errors}), 400
+
+        product = ProductService.update_product(sku, validated_data)
         return jsonify(product), 200
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
@@ -48,6 +62,7 @@ def update_product(sku):
         return jsonify({'error': str(e)}), 500
 
 @product_bp.route('/<string:sku>', methods=['DELETE'])
+@require_auth
 def delete_product(sku):
     """Delete a product by SKU"""
     try:
@@ -63,6 +78,7 @@ def delete_product(sku):
         return jsonify({'error': str(e)}), 500
 
 @product_bp.route('/stats', methods=['GET'])
+@require_auth
 def get_product_stats():
     """Get product statistics"""
     try:

@@ -7,3 +7,8 @@ python-dotenv
 google-generativeai
 joblib
 scikit-learn
+pyjwt
+werkzeug
+flask-talisman
+flask-limiter
+marshmallow

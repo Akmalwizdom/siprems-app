@@ -2,10 +2,12 @@ from flask import Blueprint, jsonify, current_app
 from services.transaction_service import TransactionService
 from services.product_service import ProductService
 from utils.db import db_query
+from utils.jwt_handler import require_auth
 
 system_bp = Blueprint('system', __name__)
 
 @system_bp.route('/dashboard-stats', methods=['GET'])
+@require_auth
 def get_dashboard_stats():
     """Get dashboard statistics"""
     try:
