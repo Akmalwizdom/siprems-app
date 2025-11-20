@@ -1,6 +1,27 @@
 version: '3.8'
 
+# Shared network for all services
+networks:
+  siprems_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Named volumes for persistence
+volumes:
+  pgdata:
+    driver: local
+  redis_data:
+    driver: local
+  models_volume:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+
 services:
+  # PostgreSQL Database
   db:
     image: postgres:16-alpine
     container_name: siprems-postgres-db
@@ -8,37 +29,226 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
       POSTGRES_DB: ${DB_NAME:-siprems_db}
+      POSTGRES_INITDB_ARGS: "-c max_connections=200 -c shared_buffers=256MB -c work_mem=16MB"
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
+    networks:
+      - siprems_network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # pgBouncer - Connection Pooling
+  pgbouncer:
+    image: pgbouncer:1.22-1
+    container_name: siprems-pgbouncer
+    environment:
+      DATABASES_HOST: db
+      DATABASES_PORT: 5432
+      DATABASES_USER: ${DB_USER:-postgres}
+      DATABASES_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      DATABASES_DBNAME: ${DB_NAME:-siprems_db}
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: 1000
+      PGBOUNCER_DEFAULT_POOL_SIZE: 25
+      PGBOUNCER_MIN_POOL_SIZE: 10
+    ports:
+      - "${PGBOUNCER_PORT:-6432}:6432"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "psql", "-U", "${DB_USER:-postgres}", "-h", "127.0.0.1", "-p", "6432", "-d", "${DB_NAME:-siprems_db}", "-c", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - siprems_network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Redis Cache & Message Broker
   redis:
     image: redis:7-alpine
     container_name: siprems-redis-broker
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
     ports:
       - "${REDIS_PORT:-6379}:6379"
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    volumes:
-      - redis_data:/data
+      start_period: 10s
+    networks:
+      - siprems_network
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  celery_worker:
-    build: .
-    container_name: siprems-celery-worker
-    command: celery -A celery_app worker --loglevel=info
+  # Backend API Instance 1
+  backend_1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: siprems-backend-1
     environment:
-      DB_HOST: db
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+      DB_NAME: ${DB_NAME:-siprems_db}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      REDIS_URL: redis://redis:6379/2
+      CACHE_ENABLED: "true"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      MODELS_DIR: /app/models
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      WORKERS: 4
+    ports:
+      - "5001:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    volumes:
+      - models_volume:/app/models
+    networks:
+      - siprems_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Backend API Instance 2 (for load balancing)
+  backend_2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: siprems-backend-2
+    environment:
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+      DB_NAME: ${DB_NAME:-siprems_db}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      REDIS_URL: redis://redis:6379/2
+      CACHE_ENABLED: "true"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      MODELS_DIR: /app/models
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      WORKERS: 4
+    ports:
+      - "5002:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+    volumes:
+      - models_volume:/app/models
+    networks:
+      - siprems_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Nginx Reverse Proxy & Load Balancer
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: siprems-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    depends_on:
+      - backend_1
+      - backend_2
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Uncomment these for SSL in production
+      # - ./certs/cert.pem:/etc/nginx/certs/cert.pem:ro
+      # - ./certs/key.pem:/etc/nginx/certs/key.pem:ro
+    networks:
+      - siprems_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Celery Worker for ML tasks
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: siprems-celery-worker
+    command: celery -A celery_app worker --loglevel=info --concurrency=2
+    environment:
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+      DB_NAME: ${DB_NAME:-siprems_db}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      REDIS_URL: redis://redis:6379/2
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       MODELS_DIR: /app/models
@@ -47,17 +257,39 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
     volumes:
       - models_volume:/app/models
     networks:
       - siprems_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Celery Beat for scheduled tasks
   celery_beat:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: siprems-celery-beat
     command: celery -A celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     environment:
-      DB_HOST: db
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+      DB_NAME: ${DB_NAME:-siprems_db}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      REDIS_URL: redis://redis:6379/2
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       MODELS_DIR: /app/models
@@ -66,16 +298,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
     volumes:
       - models_volume:/app/models
     networks:
       - siprems_network
-
-volumes:
-  pgdata:
-  redis_data:
-  models_volume:
-
-networks:
-  siprems_network:
-    driver: bridge
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
