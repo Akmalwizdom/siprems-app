@@ -44,6 +44,30 @@ class Config:
     API_MAX_FORECAST_DAYS = 365
     API_MIN_FORECAST_DAYS = 1
 
+    # Celery Configuration
+    CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+    CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/1')
+    CELERY_TASK_SERIALIZER = 'json'
+    CELERY_RESULT_SERIALIZER = 'json'
+    CELERY_ACCEPT_CONTENT = ['json']
+    CELERY_TIMEZONE = 'UTC'
+    CELERY_ENABLE_UTC = True
+    CELERY_TASK_TRACK_STARTED = True
+    CELERY_TASK_TIME_LIMIT = 30 * 60
+    CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
+
+    # Model Storage Configuration
+    MODELS_DIR = os.getenv('MODELS_DIR', '/app/models')
+    MODELS_META_DIR = os.path.join(MODELS_DIR, 'meta')
+
+    # Scheduled Tasks Configuration
+    CELERY_BEAT_SCHEDULE = {
+        'train-all-models-nightly': {
+            'task': 'tasks.ml_tasks.train_all_models',
+            'schedule': 7200.0,  # Every 2 hours for demo, change to crontab(hour=2, minute=0) for nightly
+        },
+    }
+
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
