@@ -3,7 +3,7 @@ from services.transaction_service import TransactionService
 from services.product_service import ProductService
 from utils.db import db_query
 
-system_bp = Blueprint('system', __name__, url_prefix='/system')
+system_bp = Blueprint('system', __name__)
 
 @system_bp.route('/dashboard-stats', methods=['GET'])
 def get_dashboard_stats():
@@ -11,7 +11,7 @@ def get_dashboard_stats():
     try:
         stats = TransactionService.get_dashboard_stats()
         product_stats = ProductService.get_inventory_stats()
-        
+
         return jsonify({
             'cards': {
                 'daily_transactions': stats['daily_transactions'],
@@ -24,16 +24,15 @@ def get_dashboard_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@system_bp.route('/status', methods=['GET'])
+@system_bp.route('/settings/status', methods=['GET'])
 def get_system_status():
     """Get system status"""
     try:
-        # Test database connection
         db_query("SELECT 1", fetch_all=False)
         db_status = "Connected"
     except Exception:
         db_status = "Disconnected"
-    
+
     return jsonify({
         'version': '2.0.0',
         'last_updated': 'Refactored with Blueprint Architecture',
