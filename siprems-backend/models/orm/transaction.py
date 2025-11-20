@@ -4,9 +4,8 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Column, Integer, Float, DateTime, Boolean, ForeignKey, Index
-from sqlalchemy.orm import declarative_base, relationship
-
-Base = declarative_base()
+from sqlalchemy.orm import relationship
+from models.orm.base import Base
 
 
 class Transaction(Base):

@@ -1,9 +1,6 @@
 """SQLAlchemy ORM models for SIPREMS backend."""
 
-from sqlalchemy.orm import declarative_base
-
-Base = declarative_base()
-
+from models.orm.base import Base
 from models.orm.user import User
 from models.orm.product import Product
 from models.orm.transaction import Transaction

@@ -4,9 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Column, Integer, String, Float, DateTime, Index
-from sqlalchemy.orm import declarative_base
-
-Base = declarative_base()
+from models.orm.base import Base
 
 
 class Product(Base):
