@@ -52,25 +52,30 @@ services:
 
   # pgBouncer - Connection Pooling
   pgbouncer:
-    image: pgbouncer:1.22-1
+    image: edoburu/pgbouncer:latest
     container_name: siprems-pgbouncer
     environment:
-      DATABASES_HOST: db
-      DATABASES_PORT: 5432
-      DATABASES_USER: ${DB_USER:-postgres}
-      DATABASES_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
-      DATABASES_DBNAME: ${DB_NAME:-siprems_db}
-      PGBOUNCER_POOL_MODE: transaction
-      PGBOUNCER_MAX_CLIENT_CONN: 1000
-      PGBOUNCER_DEFAULT_POOL_SIZE: 25
-      PGBOUNCER_MIN_POOL_SIZE: 10
+      # Koneksi ke Database Asli
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-mysecretpassword}
+      DB_NAME: ${DB_NAME:-siprems_db}
+      
+      # Konfigurasi Internal PgBouncer
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 25
+      MIN_POOL_SIZE: 10
+      AUTH_TYPE: scram-sha-256
     ports:
       - "${PGBOUNCER_PORT:-6432}:6432"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "psql", "-U", "${DB_USER:-postgres}", "-h", "127.0.0.1", "-p", "6432", "-d", "${DB_NAME:-siprems_db}", "-c", "SELECT 1"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "6432"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -126,7 +131,8 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      MODELS_DIR: /app/models
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      MODELS_DIR: /app/models/trained
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
       WORKERS: 4
     ports:
@@ -139,7 +145,8 @@ services:
       pgbouncer:
         condition: service_healthy
     volumes:
-      - models_volume:/app/models
+      - models_volume:/app/models/trained
+      - .:/app
     networks:
       - siprems_network
     restart: unless-stopped
@@ -173,7 +180,8 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      MODELS_DIR: /app/models
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      MODELS_DIR: /app/models/trained
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
       WORKERS: 4
     ports:
@@ -186,7 +194,8 @@ services:
       pgbouncer:
         condition: service_healthy
     volumes:
-      - models_volume:/app/models
+      - models_volume:/app/models/trained
+      - .:/app
     networks:
       - siprems_network
     restart: unless-stopped
@@ -251,7 +260,8 @@ services:
       REDIS_URL: redis://redis:6379/2
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-      MODELS_DIR: /app/models
+      MODELS_DIR: /app/models/trained
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -260,7 +270,7 @@ services:
       pgbouncer:
         condition: service_healthy
     volumes:
-      - models_volume:/app/models
+      - models_volume:/app/models/trained
     networks:
       - siprems_network
     restart: unless-stopped
@@ -281,7 +291,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: siprems-celery-beat
-    command: celery -A celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: celery -A celery_app beat --loglevel=info
     environment:
       FLASK_ENV: ${FLASK_ENV:-production}
       DB_HOST: pgbouncer
@@ -292,7 +302,8 @@ services:
       REDIS_URL: redis://redis:6379/2
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-      MODELS_DIR: /app/models
+      MODELS_DIR: /app/models/trained
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -301,7 +312,7 @@ services:
       pgbouncer:
         condition: service_healthy
     volumes:
-      - models_volume:/app/models
+      - models_volume:/app/models/trained
     networks:
       - siprems_network
     restart: unless-stopped

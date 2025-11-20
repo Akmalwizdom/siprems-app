@@ -1,4 +1,4 @@
-from models.user_model import UserModel
+from models.orm.user import User as UserModel
 from utils.password_handler import PasswordHandler
 from utils.jwt_handler import JWTHandler
 

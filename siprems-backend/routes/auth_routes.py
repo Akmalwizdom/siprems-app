@@ -49,7 +49,8 @@ def register():
     except ValueError as e:
         return jsonify({'message': str(e)}), 400
     except Exception as e:
-        return jsonify({'message': 'Registration failed'}), 500
+        print(f"Error Register: {str(e)}") 
+        return jsonify({'message': f'Registration failed: {str(e)}'}), 500
 
 
 @auth_bp.route('/login', methods=['POST'])

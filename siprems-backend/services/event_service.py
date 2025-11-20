@@ -1,4 +1,4 @@
-from models.event_model import EventModel
+from models.orm.event import Event as EventModel
 
 class EventService:
     """Business logic layer for event operations"""

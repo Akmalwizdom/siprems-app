@@ -9,6 +9,7 @@ import psycopg2
 import psycopg2.extras
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 
+os.makedirs(os.environ.get('MODELS_DIR', '/app/models/trained'), exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

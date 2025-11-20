@@ -1,4 +1,4 @@
-from models.product_model import ProductModel
+from models.orm.product import Product as ProductModel
 
 class ProductService:
     """Business logic layer for product operations"""

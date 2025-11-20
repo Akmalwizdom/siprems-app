@@ -1,4 +1,4 @@
-from models.transaction_model import TransactionModel
+from models.orm.transaction import Transaction as TransactionModel
 from models.product_model import ProductModel
 
 class TransactionService:
