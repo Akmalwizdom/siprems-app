@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -10,24 +11,18 @@ import {
   CalendarDays,
 } from 'lucide-react';
 
-type Page = 'dashboard' | 'transactions' | 'prediction' | 'insights' | 'products' | 'calendar' | 'settings';
-
-interface SidebarProps {
-  currentPage: Page;
-  onNavigate: (page: Page) => void;
-}
-
 const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'transactions', label: 'Transactions', icon: ShoppingCart },
-  { id: 'prediction', label: 'Prediction', icon: TrendingUp },
-  { id: 'insights', label: 'Insights', icon: Bot },
-  { id: 'products', label: 'Products', icon: Package },
-  { id: 'calendar', label: 'Calendar', icon: CalendarDays },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+  { id: 'transactions', label: 'Transactions', icon: ShoppingCart, path: '/transactions' },
+  { id: 'prediction', label: 'Prediction', icon: TrendingUp, path: '/prediction' },
+  { id: 'insights', label: 'Insights', icon: Bot, path: '/insights' },
+  { id: 'products', label: 'Products', icon: Package, path: '/products' },
+  { id: 'calendar', label: 'Calendar', icon: CalendarDays, path: '/calendar' },
+  { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
 ];
 
-export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+export default function Sidebar() {
+  const location = useLocation();
   return (
     <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
       {/* Logo */}
@@ -47,19 +42,17 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
       <nav className="flex-1 p-4 space-y-1">
         {menuItems.map((item) => {
           const Icon = item.icon;
-          const isActive = currentPage === item.id;
+          const isActive = location.pathname === item.path || (item.path === '/' && location.pathname === '');
 
           return (
-            <motion.button
+            <Link
               key={item.id}
-              onClick={() => onNavigate(item.id as Page)}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors relative ${
+              to={item.path}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors relative block ${
                 isActive
                   ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:text-gray-900 dark:hover:text-blue-100'
               }`}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
             >
               {isActive && (
                 <motion.div
@@ -72,7 +65,7 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
               <span className={`relative z-10 ${isActive ? 'text-blue-600 dark:text-blue-400' : ''}`}>
                 {item.label}
               </span>
-            </motion.button>
+            </Link>
           );
         })}
       </nav>

@@ -1,15 +1,16 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
-import { ShoppingCart, TrendingUp } from 'lucide-react';
+import { ShoppingCart, TrendingUp, Loader2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card } from './ui/card';
 import { apiClient } from '../utils/api';
-
-interface LoginPageProps {
-  onLogin: (username: string) => void;
-}
+import { loginSchema, type LoginFormData } from '../utils/schemas';
+import { showToast } from '../utils/toast';
 
 interface LoginResponse {
   user_id: number;
@@ -28,57 +29,78 @@ interface RegisterResponse {
   };
 }
 
-export default function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage() {
+  const navigate = useNavigate();
   const [isRegister, setIsRegister] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [error, setError] = useState('');
+  const [fullName, setFullName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    reset,
+    setError,
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+  });
+
+  const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
 
     try {
       if (isRegister) {
-        // Register
+        if (!fullName.trim()) {
+          setError('email', { type: 'manual', message: 'Full name is required' });
+          setIsLoading(false);
+          return;
+        }
+
         const response = await apiClient.post<RegisterResponse>('/auth/register', {
-          email,
-          password,
-          full_name: name
-        });
-        setError('Registration successful! Please sign in.');
-        setIsRegister(false);
-        setEmail('');
-        setPassword('');
-        setName('');
-      } else {
-        // Login
-        const response = await apiClient.post<LoginResponse>('/auth/login', {
-          email,
-          password
+          email: data.email,
+          password: data.password,
+          full_name: fullName,
         });
 
-        // Save tokens and user info
+        showToast.success('Registration successful! Please sign in.');
+        setIsRegister(false);
+        setFullName('');
+        reset();
+      } else {
+        const response = await apiClient.post<LoginResponse>('/auth/login', {
+          email: data.email,
+          password: data.password,
+        });
+
         apiClient.setTokens({
           access_token: response.access_token,
-          refresh_token: response.refresh_token
+          refresh_token: response.refresh_token,
         });
-        localStorage.setItem('user', JSON.stringify({
-          user_id: response.user_id,
-          email: response.email,
-          full_name: response.full_name
-        }));
 
-        onLogin(response.full_name);
+        localStorage.setItem(
+          'user',
+          JSON.stringify({
+            user_id: response.user_id,
+            email: response.email,
+            full_name: response.full_name,
+          })
+        );
+
+        showToast.success('Login successful!');
+        navigate('/');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
+      const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
+      showToast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const toggleAuthMode = () => {
+    setIsRegister(!isRegister);
+    setFullName('');
+    reset();
   };
 
   return (
@@ -89,7 +111,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         transition={{ duration: 0.5 }}
         className="w-full max-w-5xl grid md:grid-cols-2 gap-8 items-center"
       >
-        {/* Left Side - Illustration/Branding */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -109,7 +130,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           </div>
         </motion.div>
 
-        {/* Right Side - Login Form */}
         <Card className="p-8 rounded-2xl shadow-xl bg-white">
           <motion.div
             initial={{ opacity: 0 }}
@@ -127,13 +147,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               </p>
             </div>
 
-            {error && (
-              <div className={`mb-4 p-3 rounded-lg ${error.includes('successful') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               {isRegister && (
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
@@ -141,12 +155,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     id="name"
                     type="text"
                     placeholder="John Doe"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
                     disabled={isLoading}
                     className="rounded-xl"
                   />
+                  {!fullName.trim() && isRegister && (
+                    <p className="text-sm text-red-600">Full name is required</p>
+                  )}
                 </div>
               )}
 
@@ -156,12 +172,13 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   id="email"
                   type="email"
                   placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+                  {...register('email')}
                   disabled={isLoading}
                   className="rounded-xl"
                 />
+                {errors.email && (
+                  <p className="text-sm text-red-600">{errors.email.message}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -170,30 +187,29 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   id="password"
                   type="password"
                   placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
+                  {...register('password')}
                   disabled={isLoading}
                   className="rounded-xl"
                 />
+                {errors.password && (
+                  <p className="text-sm text-red-600">{errors.password.message}</p>
+                )}
               </div>
 
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full rounded-xl bg-blue-500 hover:bg-blue-600 disabled:opacity-50"
+                className="w-full rounded-xl bg-blue-500 hover:bg-blue-600 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {isLoading ? 'Please wait...' : (isRegister ? 'Create Account' : 'Sign In')}
+                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isLoading ? 'Please wait...' : isRegister ? 'Create Account' : 'Sign In'}
               </Button>
             </form>
 
             <div className="mt-6 text-center">
               <button
                 type="button"
-                onClick={() => {
-                  setIsRegister(!isRegister);
-                  setError('');
-                }}
+                onClick={toggleAuthMode}
                 disabled={isLoading}
                 className="text-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50"
               >

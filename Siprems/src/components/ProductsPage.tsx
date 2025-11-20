@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'; // Import useEffect
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
-import { Plus, Edit, Trash2, Package, AlertCircle, Loader2, AlertTriangle } from 'lucide-react'; // Import Loader2 & AlertTriangle
+import { Plus, Edit, Trash2, Package, AlertCircle, AlertTriangle } from 'lucide-react';
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import {
   Dialog,
   DialogContent,
@@ -14,49 +16,27 @@ import {
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './ui/table';
-import { toast } from 'sonner@2.0.3';
-import { Alert, AlertDescription, AlertTitle } from './ui/alert'; // Import Alert
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { DataTable, Column } from './ui/data-table';
+import { CardSkeleton } from './skeletons/CardSkeleton';
+import { showToast } from '../utils/toast';
+import { productSchema, type ProductFormData } from '../utils/schemas';
 
-// Tipe data dari database (string/number)
 interface RawProduct {
   product_id: number;
   name: string;
   category: string;
   variation: string | null;
-  price: string | number; // Bisa jadi string
-  stock: string | number; // Bisa jadi string
+  price: string | number;
+  stock: string | number;
   sku: string;
   created_at: string;
 }
 
-// Tipe data yang bersih (sudah di-parse)
-interface Product {
-  product_id: number;
-  name: string;
-  category: string;
-  variation: string | null;
+interface Product extends Omit<RawProduct, 'price' | 'stock'> {
+  id?: string | number;
   price: number;
   stock: number;
-  sku: string;
-  created_at: string;
-}
-
-// Tipe data untuk form
-interface ProductFormData {
-  name: string;
-  sku: string;
-  category: string;
-  variation: string;
-  price: string;
-  stock: string;
 }
 
 const categories = ['Electronics', 'Office', 'Accessories', 'Furniture', 'Supplies', 'F&B'];
@@ -73,22 +53,22 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [formData, setFormData] = useState<ProductFormData>({
-    name: '',
-    sku: '',
-    category: '',
-    variation: '',
-    price: '',
-    stock: '',
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+    reset,
+    setValue,
+  } = useForm<ProductFormData>({
+    resolver: zodResolver(productSchema),
   });
 
-  // --- Fungsi Fetch Data ---
   const fetchProducts = async () => {
     setIsLoading(true);
     setError(null);
@@ -96,24 +76,23 @@ export default function ProductsPage() {
       const response = await fetch(`${API_URL}/products`);
       if (!response.ok) throw new Error('Failed to fetch products');
       const data: RawProduct[] = await response.json();
-      
-      // --- PERBAIKAN PENTING ---
-      // Konversi semua string angka dari JSON menjadi number
-      const cleanData: Product[] = data.map(p => ({
+
+      const cleanData: Product[] = data.map((p) => ({
         ...p,
+        id: p.product_id,
         price: parseFloat(String(p.price)),
-        stock: parseInt(String(p.stock), 10)
+        stock: parseInt(String(p.stock), 10),
       }));
 
       setProducts(cleanData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      showToast.error('Failed to load products');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- Load data saat komponen pertama kali di-mount ---
   useEffect(() => {
     fetchProducts();
   }, []);
@@ -125,79 +104,52 @@ export default function ProductsPage() {
   );
 
   const resetForm = () => {
-    setFormData({ name: '', sku: '', category: '', variation: '', price: '', stock: '' });
+    reset();
     setSelectedProduct(null);
   };
 
-  const validateForm = (): boolean => {
-    if (!formData.name || !formData.sku || !formData.category || !formData.price || !formData.stock) {
-      toast.error('Please fill all required fields');
-      return false;
-    }
-    if (parseFloat(formData.price) < 0 || parseInt(formData.stock) < 0) {
-      toast.error('Price and stock must be positive values');
-      return false;
-    }
-    return true;
-  };
-
-  // --- Fungsi CRUD ---
-  const handleAddProduct = async () => {
-    if (!validateForm()) return;
-
+  const onSubmit = async (data: ProductFormData) => {
     try {
-      const response = await fetch(`${API_URL}/products`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to add product');
-      }
-      
-      await fetchProducts(); // Muat ulang data
-      resetForm();
-      setIsAddOpen(false);
-      toast.success('Product added successfully');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to add product');
-    }
-  };
+      if (selectedProduct) {
+        const response = await fetch(`${API_URL}/products/${selectedProduct.sku}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const resData = await response.json();
+        if (!response.ok) throw new Error(resData.error || 'Failed to update product');
 
-  const handleEditProduct = async () => {
-    if (!validateForm() || !selectedProduct) return;
+        await fetchProducts();
+        setIsEditOpen(false);
+        resetForm();
+        showToast.success('Product updated successfully');
+      } else {
+        const response = await fetch(`${API_URL}/products`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const resData = await response.json();
+        if (!response.ok) throw new Error(resData.error || 'Failed to add product');
 
-    try {
-      const response = await fetch(`${API_URL}/products/${selectedProduct.sku}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to update product');
+        await fetchProducts();
+        setIsAddOpen(false);
+        resetForm();
+        showToast.success('Product added successfully');
       }
-      
-      await fetchProducts(); // Muat ulang data
-      resetForm();
-      setIsEditOpen(false);
-      toast.success('Product updated successfully');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update product');
+      showToast.error(err instanceof Error ? err.message : 'Failed to save product');
     }
   };
 
   const handleOpenEdit = (product: Product) => {
     setSelectedProduct(product);
-    setFormData({
-      name: product.name,
-      sku: product.sku,
-      category: product.category,
-      variation: product.variation || '',
-      price: product.price.toString(),
-      stock: product.stock.toString(),
-    });
+    setValue('name', product.name);
+    setValue('sku', product.sku);
+    setValue('category', product.category);
+    setValue('variation', product.variation || '');
+    setValue('price', product.price.toString());
+    setValue('stock', product.stock.toString());
     setIsEditOpen(true);
   };
 
@@ -212,22 +164,84 @@ export default function ProductsPage() {
       const response = await fetch(`${API_URL}/products/${selectedProduct.sku}`, {
         method: 'DELETE',
       });
-      
+
       const resData = await response.json();
       if (!response.ok) throw new Error(resData.error || 'Failed to delete product');
 
-      await fetchProducts(); // Muat ulang data
+      await fetchProducts();
       setIsDeleteOpen(false);
       setSelectedProduct(null);
-      toast.success('Product deleted successfully');
+      showToast.success('Product deleted successfully');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete product');
+      showToast.error(err instanceof Error ? err.message : 'Failed to delete product');
     }
   };
 
-  // --- Menghitung Statistik Kartu ---
   const totalValue = products.reduce((sum, p) => sum + p.price * p.stock, 0);
   const lowStockItems = products.filter((p) => p.stock <= 5).length;
+
+  const columns: Column<Product>[] = [
+    {
+      key: 'name',
+      label: 'Product Name',
+      sortable: true,
+    },
+    {
+      key: 'sku',
+      label: 'SKU',
+      sortable: true,
+    },
+    {
+      key: 'category',
+      label: 'Category',
+      sortable: true,
+    },
+    {
+      key: 'price',
+      label: 'Price',
+      sortable: true,
+      render: (value) => `$${parseFloat(value).toFixed(2)}`,
+    },
+    {
+      key: 'stock',
+      label: 'Stock',
+      sortable: true,
+      render: (value, row) => {
+        const status = getStockStatus(row.stock);
+        return (
+          <div className="flex items-center space-x-2">
+            <span>{value}</span>
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
+              {status.label}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      width: '120px',
+      render: (_, row) => (
+        <div className="flex justify-end space-x-2">
+          <button
+            onClick={() => handleOpenEdit(row)}
+            className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500 transition-colors"
+            title="Edit product"
+          >
+            <Edit className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => handleOpenDeleteConfirm(row)}
+            className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500 transition-colors"
+            title="Delete product"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <motion.div
@@ -236,7 +250,6 @@ export default function ProductsPage() {
       transition={{ duration: 0.5 }}
       className="space-y-6"
     >
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-gray-900 dark:text-white mb-2">Products</h1>
@@ -251,44 +264,38 @@ export default function ProductsPage() {
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[500px] rounded-2xl">
-            {/* Konten Dialog Tambah Produk */}
             <DialogHeader>
               <DialogTitle>Add New Product</DialogTitle>
-              <DialogDescription>
-                Add a new product to your inventory. Fill in all required fields.
-              </DialogDescription>
+              <DialogDescription>Add a new product to your inventory. Fill in all required fields.</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="add-name">Product Name *</Label>
+                <Label htmlFor="add-name">Product Name</Label>
                 <Input
                   id="add-name"
                   placeholder="Enter product name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  {...register('name')}
                   className="rounded-xl"
                   autoFocus
                 />
+                {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="add-sku">SKU *</Label>
+                <Label htmlFor="add-sku">SKU</Label>
                 <Input
                   id="add-sku"
                   placeholder="Enter SKU code"
-                  value={formData.sku}
-                  onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                  {...register('sku')}
                   className="rounded-xl"
                 />
+                {errors.sku && <p className="text-sm text-red-600">{errors.sku.message}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="add-category">Category *</Label>
-                  <Select
-                    value={formData.category}
-                    onValueChange={(value) => setFormData({ ...formData, category: value })}
-                  >
+                  <Label htmlFor="add-category">Category</Label>
+                  <Select {...register('category')}>
                     <SelectTrigger id="add-category" className="rounded-xl">
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
@@ -300,6 +307,7 @@ export default function ProductsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {errors.category && <p className="text-sm text-red-600">{errors.category.message}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -307,8 +315,7 @@ export default function ProductsPage() {
                   <Input
                     id="add-variation"
                     placeholder="e.g., Color, Size"
-                    value={formData.variation}
-                    onChange={(e) => setFormData({ ...formData, variation: e.target.value })}
+                    {...register('variation')}
                     className="rounded-xl"
                   />
                 </div>
@@ -316,87 +323,96 @@ export default function ProductsPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="add-price">Price ($) *</Label>
+                  <Label htmlFor="add-price">Price</Label>
                   <Input
                     id="add-price"
                     type="number"
                     step="0.01"
                     placeholder="0.00"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    {...register('price')}
                     className="rounded-xl"
                   />
+                  {errors.price && <p className="text-sm text-red-600">{errors.price.message}</p>}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="add-stock">Stock *</Label>
+                  <Label htmlFor="add-stock">Stock</Label>
                   <Input
                     id="add-stock"
                     type="number"
                     placeholder="0"
-                    value={formData.stock}
-                    onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
+                    {...register('stock')}
                     className="rounded-xl"
                   />
+                  {errors.stock && <p className="text-sm text-red-600">{errors.stock.message}</p>}
                 </div>
               </div>
-            </div>
-            <div className="flex justify-end space-x-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setIsAddOpen(false);
-                  resetForm();
-                }}
-                className="rounded-xl"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleAddProduct}
-                className="rounded-xl bg-blue-500 hover:bg-blue-600 hover:text-cyan-100"
-              >
-                Add Product
-              </Button>
-            </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsAddOpen(false);
+                    resetForm();
+                  }}
+                  className="rounded-xl"
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="rounded-xl bg-blue-500 hover:bg-blue-600 hover:text-cyan-100"
+                >
+                  {isSubmitting ? 'Saving...' : 'Add Product'}
+                </Button>
+              </div>
+            </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Total Products</CardTitle>
-            <Package className="w-5 h-5 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <div className="text-3xl text-gray-900 dark:text-white">{products.length}</div>}
-          </CardContent>
-        </Card>
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Total Products</CardTitle>
+              <Package className="w-5 h-5 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl text-gray-900 dark:text-white">{products.length}</div>
+            </CardContent>
+          </Card>
 
-        <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Total Inventory Value</CardTitle>
-            <Package className="w-5 h-5 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <div className="text-3xl text-gray-900 dark:text-white">${totalValue.toFixed(2)}</div>}
-          </CardContent>
-        </Card>
+          <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Total Value</CardTitle>
+              <Package className="w-5 h-5 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl text-gray-900 dark:text-white">${totalValue.toFixed(2)}</div>
+            </CardContent>
+          </Card>
 
-        <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Low Stock Items</CardTitle>
-            <AlertCircle className="w-5 h-5 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            {isLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <div className="text-3xl text-gray-900 dark:text-white">{lowStockItems}</div>}
-          </CardContent>
-        </Card>
-      </div>
+          <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Low Stock</CardTitle>
+              <AlertCircle className="w-5 h-5 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl text-gray-900 dark:text-white">{lowStockItems}</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-      {/* Search Bar */}
       <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
         <CardContent className="pt-6">
           <Input
@@ -408,129 +424,64 @@ export default function ProductsPage() {
         </CardContent>
       </Card>
 
-      {/* Products Table */}
       <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
         <CardHeader>
           <CardTitle className="text-gray-900 dark:text-white">Products Inventory</CardTitle>
           <p className="text-sm text-gray-500 dark:text-gray-400">A complete list of all products</p>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center items-center h-48">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            </div>
-          ) : error ? (
+          {error ? (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>Error Fetching Data</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Product Name</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Price</TableHead>
-                  <TableHead>Stock</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.length > 0 ? (
-                  filteredProducts.map((product) => {
-                    const status = getStockStatus(product.stock);
-                    return (
-                      <TableRow key={product.product_id}>
-                        <TableCell className="font-medium">{product.name}</TableCell>
-                        <TableCell>{product.sku}</TableCell>
-                        <TableCell>{product.category}</TableCell>
-                        {/* Data sudah bersih (number), .toFixed() aman */}
-                        <TableCell>${product.price.toFixed(2)}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <span>{product.stock}</span>
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
-                              {status.label}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end space-x-2">
-                            <button
-                              onClick={() => handleOpenEdit(product)}
-                              className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-blue-500 transition-colors"
-                              title="Edit product"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleOpenDeleteConfirm(product)}
-                              className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-red-500 transition-colors"
-                              title="Delete product"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-gray-500">
-                      {products.length === 0 ? "No products found. Add one to get started." : "No products found matching your search."}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+            <DataTable<Product>
+              columns={columns}
+              data={filteredProducts}
+              isLoading={isLoading}
+              pageSize={10}
+              emptyMessage={searchTerm ? 'No products found matching your search.' : 'No products found. Add one to get started.'}
+            />
           )}
         </CardContent>
       </Card>
 
-      {/* Edit Product Dialog */}
       <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) resetForm(); }}>
         <DialogContent className="sm:max-w-[500px] rounded-2xl">
-          {/* Konten Dialog Edit Produk */}
           <DialogHeader>
             <DialogTitle>Edit Product</DialogTitle>
-            <DialogDescription>
-              Update product information. Click save when you're done.
-            </DialogDescription>
+            <DialogDescription>Update product information. Click save when you're done.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-name">Product Name *</Label>
+              <Label htmlFor="edit-name">Product Name</Label>
               <Input
                 id="edit-name"
                 placeholder="Enter product name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                {...register('name')}
                 className="rounded-xl"
                 autoFocus
               />
+              {errors.name && <p className="text-sm text-red-600">{errors.name.message}</p>}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-sku">SKU *</Label>
+              <Label htmlFor="edit-sku">SKU</Label>
               <Input
                 id="edit-sku"
                 placeholder="Enter SKU code"
-                value={formData.sku}
-                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                {...register('sku')}
                 className="rounded-xl"
               />
+              {errors.sku && <p className="text-sm text-red-600">{errors.sku.message}</p>}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="edit-category">Category *</Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(value) => setFormData({ ...formData, category: value })}
-                >
+                <Label htmlFor="edit-category">Category</Label>
+                <Select {...register('category')}>
                   <SelectTrigger id="edit-category" className="rounded-xl">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -542,6 +493,7 @@ export default function ProductsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {errors.category && <p className="text-sm text-red-600">{errors.category.message}</p>}
               </div>
 
               <div className="space-y-2">
@@ -549,8 +501,7 @@ export default function ProductsPage() {
                 <Input
                   id="edit-variation"
                   placeholder="e.g., Color, Size"
-                  value={formData.variation}
-                  onChange={(e) => setFormData({ ...formData, variation: e.target.value })}
+                  {...register('variation')}
                   className="rounded-xl"
                 />
               </div>
@@ -558,53 +509,55 @@ export default function ProductsPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="edit-price">Price ($) *</Label>
+                <Label htmlFor="edit-price">Price</Label>
                 <Input
                   id="edit-price"
                   type="number"
                   step="0.01"
                   placeholder="0.00"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  {...register('price')}
                   className="rounded-xl"
                 />
+                {errors.price && <p className="text-sm text-red-600">{errors.price.message}</p>}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit-stock">Stock *</Label>
+                <Label htmlFor="edit-stock">Stock</Label>
                 <Input
                   id="edit-stock"
                   type="number"
                   placeholder="0"
-                  value={formData.stock}
-                  onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
+                  {...register('stock')}
                   className="rounded-xl"
                 />
+                {errors.stock && <p className="text-sm text-red-600">{errors.stock.message}</p>}
               </div>
             </div>
-          </div>
-          <div className="flex justify-end space-x-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsEditOpen(false);
-                resetForm();
-              }}
-              className="rounded-xl"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleEditProduct}
-              className="rounded-xl bg-blue-500 hover:bg-blue-600 hover:text-cyan-100"
-            >
-              Save Changes
-            </Button>
-          </div>
+
+            <div className="flex justify-end space-x-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsEditOpen(false);
+                  resetForm();
+                }}
+                className="rounded-xl"
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="rounded-xl bg-blue-500 hover:bg-blue-600 hover:text-cyan-100"
+              >
+                {isSubmitting ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
         <DialogContent className="sm:max-w-[400px] rounded-2xl">
           <DialogHeader>

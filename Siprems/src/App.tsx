@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 import TransactionsPage from './components/TransactionsPage';
@@ -8,11 +8,9 @@ import InsightsPage from './components/InsightsPage';
 import SettingsPage from './components/SettingsPage';
 import ProductsPage from './components/ProductsPage';
 import CalendarPage from './components/CalendarPage';
-import Sidebar from './components/Sidebar';
-import TopBar from './components/TopBar';
+import { MainLayout } from './components/MainLayout';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { apiClient } from './utils/api';
-
-type Page = 'login' | 'dashboard' | 'transactions' | 'prediction' | 'insights' | 'settings' | 'products' | 'calendar';
 
 interface User {
   user_id: number;
@@ -20,75 +18,50 @@ interface User {
   full_name: string;
 }
 
-export default function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('login');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [username, setUsername] = useState('');
-  const [darkMode, setDarkMode] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-
+function App() {
   useEffect(() => {
-    // Check if user is already logged in
     const storedUser = localStorage.getItem('user');
     const accessToken = localStorage.getItem('access_token');
 
     if (storedUser && accessToken) {
       try {
-        const userData = JSON.parse(storedUser) as User;
-        setUser(userData);
-        setUsername(userData.full_name);
-        setIsAuthenticated(true);
-        setCurrentPage('dashboard');
+        JSON.parse(storedUser) as User;
       } catch {
         localStorage.removeItem('user');
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        apiClient.clearTokens();
       }
     }
   }, []);
 
-  const handleLogin = (name: string) => {
-    setUsername(name);
-    setIsAuthenticated(true);
-    setCurrentPage('dashboard');
-  };
-
-  const handleLogout = () => {
-    apiClient.clearTokens();
-    setIsAuthenticated(false);
-    setUsername('');
-    setUser(null);
-    setCurrentPage('login');
-  };
-
-  if (!isAuthenticated) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
   return (
-    <div className={darkMode ? 'dark' : ''}>
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-        <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <TopBar 
-            username={username} 
-            onLogout={handleLogout}
-            darkMode={darkMode}
-            onDarkModeToggle={() => setDarkMode(!darkMode)}
-          />
-          <main className="flex-1 overflow-y-auto p-6">
-            <AnimatePresence mode="wait">
-              {currentPage === 'dashboard' && <Dashboard key="dashboard" />}
-              {currentPage === 'transactions' && <TransactionsPage key="transactions" />}
-              {currentPage === 'prediction' && <PredictionPage key="prediction" />}
-              {currentPage === 'insights' && <InsightsPage key="insights" />}
-              {currentPage === 'products' && <ProductsPage key="products" />}
-              {currentPage === 'calendar' && <CalendarPage key="calendar" />}
-              {currentPage === 'settings' && <SettingsPage key="settings" />}
-            </AnimatePresence>
-          </main>
-        </div>
-      </div>
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <MainLayout>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/transactions" element={<TransactionsPage />} />
+                  <Route path="/prediction" element={<PredictionPage />} />
+                  <Route path="/insights" element={<InsightsPage />} />
+                  <Route path="/products" element={<ProductsPage />} />
+                  <Route path="/calendar" element={<CalendarPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </MainLayout>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </Router>
   );
 }
+
+export default App;
