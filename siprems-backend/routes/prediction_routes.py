@@ -1,5 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from utils.jwt_handler import require_auth
+from utils.cache_service import get_cache_service, generate_cache_key
+from utils.metrics_service import track_http_request
 from tasks.ml_tasks import predict_stock_task
 from services.task_service import TaskService
 
@@ -7,12 +9,29 @@ prediction_bp = Blueprint('predictions', __name__, url_prefix='/predict')
 
 @prediction_bp.route('', methods=['POST'])
 @require_auth
+@track_http_request()
 def predict_stock():
-    """Predict stock levels for a product (synchronous)"""
+    """Predict stock levels for a product (synchronous) with caching"""
     try:
         data = request.get_json()
+        product_sku = data.get('product_sku')
+        forecast_days = int(data.get('days', 7))
+
+        # Try to get from cache first
+        cache_service = get_cache_service()
+        cache_key = generate_cache_key(product_sku, days=forecast_days, prefix='prediction')
+
+        cached_result = cache_service.get(cache_key)
+        if cached_result:
+            return jsonify(cached_result), 200
+
+        # Not in cache, compute result
         prediction_service = current_app.prediction_service
         result = prediction_service.predict_stock(data)
+
+        # Cache the result
+        cache_service.set(cache_key, result, ttl=cache_service.TTL_POLICIES.get('prediction_result', 7200))
+
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
