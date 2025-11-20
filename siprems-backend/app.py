@@ -167,37 +167,51 @@ def create_app(config: Optional[object] = None) -> Flask:
         except Exception as e:
             return jsonify({"status": "not_ready", "error": str(e)}), 503
 
-    # Metrics endpoint
-    @app.route('/metrics', methods=['GET'])
-    def metrics():
+    @app.route("/metrics", methods=["GET"])
+    def metrics() -> tuple:
+        """
+        Export application metrics.
+
+        Returns:
+            JSON response with application metrics.
+        """
         metrics_service = get_metrics_service()
         return jsonify(metrics_service.export_metrics()), 200
 
-    # Cache stats endpoint
-    @app.route('/cache-stats', methods=['GET'])
-    def cache_stats():
+    @app.route("/cache-stats", methods=["GET"])
+    def cache_stats() -> tuple:
+        """
+        Get cache statistics.
+
+        Returns:
+            JSON response with Redis cache statistics.
+        """
         return jsonify(cache_service.get_stats()), 200
 
-    # Error handlers
     @app.errorhandler(429)
-    def ratelimit_handler(e):
-        return jsonify({'error': 'Rate limit exceeded'}), 429
+    def ratelimit_handler(e) -> tuple:
+        """Handle rate limit exceeded errors."""
+        return jsonify({"error": "Rate limit exceeded"}), 429
 
     @app.errorhandler(401)
-    def unauthorized_handler(e):
-        return jsonify({'error': 'Unauthorized'}), 401
+    def unauthorized_handler(e) -> tuple:
+        """Handle authorization errors."""
+        return jsonify({"error": "Unauthorized"}), 401
 
     @app.errorhandler(403)
-    def forbidden_handler(e):
-        return jsonify({'error': 'Forbidden'}), 403
+    def forbidden_handler(e) -> tuple:
+        """Handle forbidden access errors."""
+        return jsonify({"error": "Forbidden"}), 403
 
     @app.errorhandler(404)
-    def not_found_handler(e):
-        return jsonify({'error': 'Not found'}), 404
+    def not_found_handler(e) -> tuple:
+        """Handle resource not found errors."""
+        return jsonify({"error": "Not found"}), 404
 
     @app.errorhandler(500)
-    def internal_error_handler(e):
-        return jsonify({'error': 'Internal server error'}), 500
+    def internal_error_handler(e) -> tuple:
+        """Handle internal server errors."""
+        return jsonify({"error": "Internal server error"}), 500
 
     return app
 
