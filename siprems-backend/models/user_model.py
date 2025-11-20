@@ -150,6 +150,7 @@ class UserModel:
             if user:
                 user.password_hash = password_hash
                 user.updated_at = datetime.utcnow()
+                session.flush()
 
     @staticmethod
     def deactivate_user(user_id: int) -> None:
@@ -173,6 +174,7 @@ class UserModel:
             if user:
                 user.is_active = False
                 user.updated_at = datetime.utcnow()
+                session.flush()
 
     @staticmethod
     def activate_user(user_id: int) -> None:
@@ -196,3 +198,4 @@ class UserModel:
             if user:
                 user.is_active = True
                 user.updated_at = datetime.utcnow()
+                session.flush()
