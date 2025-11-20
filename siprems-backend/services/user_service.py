@@ -4,53 +4,67 @@ from utils.jwt_handler import JWTHandler
 
 class UserService:
     """User service for authentication operations"""
-    
+
     @staticmethod
     def register_user(email, full_name, password):
         """Register a new user"""
+        # Validate inputs are not empty
+        if not email or not email.strip():
+            raise ValueError('Email is required')
+        if not full_name or not full_name.strip():
+            raise ValueError('Full name is required')
+        if not password or not password.strip():
+            raise ValueError('Password is required')
+
         # Check if user already exists
         if UserModel.user_exists(email):
-            raise ValueError('Email already registered')
-        
+            raise ValueError('Email already in use')
+
         # Validate password strength
         is_strong, message = PasswordHandler.is_password_strong(password)
         if not is_strong:
             raise ValueError(message)
-        
+
         # Hash password
         password_hash = PasswordHandler.hash_password(password)
-        
+
         # Create user
         user = UserModel.create_user(email, full_name, password_hash)
-        
+
         if not user:
             raise Exception('Failed to create user')
-        
+
         return user
-    
+
     @staticmethod
     def login_user(email, password):
         """Authenticate user and return tokens"""
+        # Validate inputs are not empty
+        if not email or not email.strip():
+            raise ValueError('Email is required')
+        if not password or not password.strip():
+            raise ValueError('Password is required')
+
         # Get user by email
         user = UserModel.get_user_by_email(email)
-        
+
         if not user:
-            raise ValueError('Invalid email or password')
-        
+            raise ValueError('User not found')
+
         if not user.get('is_active'):
             raise ValueError('Account is deactivated')
-        
+
         # Verify password
         if not PasswordHandler.verify_password(user.get('password_hash'), password):
-            raise ValueError('Invalid email or password')
-        
+            raise ValueError('Wrong password')
+
         # Update last login
         UserModel.update_user_last_login(user.get('user_id'))
-        
+
         # Generate tokens
         access_token = JWTHandler.generate_access_token(user.get('user_id'), user.get('email'))
         refresh_token = JWTHandler.generate_refresh_token(user.get('user_id'), user.get('email'))
-        
+
         return {
             'user_id': user.get('user_id'),
             'email': user.get('email'),
