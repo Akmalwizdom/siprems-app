@@ -1,14 +1,19 @@
+"""Flask application factory and configuration."""
+
+from typing import Optional
+
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_talisman import Talisman
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_compress import Compress
+
 from utils.config import get_config
 from utils.cache_service import init_cache
 from utils.metrics_service import init_metrics, get_metrics_service
+from utils.db_session import init_db_session, get_db_session, get_db_engine
 from ml_engine import MLEngine
-from utils.db import get_db_connection
 from services.prediction_service import PredictionService
 from services.chat_service import ChatService
 from routes import (
@@ -19,7 +24,7 @@ from routes import (
     prediction_bp,
     chat_bp,
     system_bp,
-    task_bp
+    task_bp,
 )
 
 def create_app(config=None):
