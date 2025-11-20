@@ -120,42 +120,52 @@ def create_app(config: Optional[object] = None) -> Flask:
     app.register_blueprint(system_bp)
     app.register_blueprint(task_bp)
 
-    # Basic health check endpoint (for load balancer)
-    @app.route('/health', methods=['GET'])
-    def health():
-        """Fast health check for load balancer"""
-        return jsonify({'status': 'healthy'}), 200
+    @app.route("/health", methods=["GET"])
+    def health() -> tuple:
+        """
+        Fast health check endpoint for load balancers.
 
-    # Readiness check endpoint (full dependency check)
-    @app.route('/ready', methods=['GET'])
-    def readiness():
-        """Check if service is ready to serve traffic"""
+        Returns:
+            JSON response with status and HTTP 200.
+        """
+        return jsonify({"status": "healthy"}), 200
+
+    @app.route("/ready", methods=["GET"])
+    def readiness() -> tuple:
+        """
+        Readiness check endpoint verifying all service dependencies.
+
+        Checks database, Redis, and chat service connectivity.
+
+        Returns:
+            JSON response with readiness status and dependency checks.
+            Returns 200 if ready, 503 if not ready.
+        """
         try:
             # Check database connectivity
-            from utils.db import db_query
-            db_query("SELECT 1", fetch_all=False)
+            with app.get_db_session() as session:
+                session.execute("SELECT 1")
 
             # Check Redis connectivity
             cache_service = app.cache_service
             redis_available = cache_service.is_available()
 
-            # Check Celery connectivity (if needed)
+            # Check chat service connectivity
             chat_available = app.chat_service.is_available()
 
-            return jsonify({
-                'status': 'ready',
-                'checks': {
-                    'database': 'ok',
-                    'redis': 'ok' if redis_available else 'degraded',
-                    'chat_service': 'ok' if chat_available else 'unavailable',
-                    'timestamp': __import__('datetime').datetime.utcnow().isoformat()
+            return jsonify(
+                {
+                    "status": "ready",
+                    "checks": {
+                        "database": "ok",
+                        "redis": "ok" if redis_available else "degraded",
+                        "chat_service": "ok" if chat_available else "unavailable",
+                        "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
+                    },
                 }
-            }), 200
+            ), 200
         except Exception as e:
-            return jsonify({
-                'status': 'not_ready',
-                'error': str(e)
-            }), 503
+            return jsonify({"status": "not_ready", "error": str(e)}), 503
 
     # Metrics endpoint
     @app.route('/metrics', methods=['GET'])
