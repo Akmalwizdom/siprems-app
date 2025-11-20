@@ -56,42 +56,49 @@ export default function LoginPage() {
           return;
         }
 
-        const response = await apiClient.post<RegisterResponse>('/auth/register', {
-          email: data.email,
-          password: data.password,
-          full_name: fullName,
-        });
+        try {
+          const response = await apiClient.post<RegisterResponse>('/auth/register', {
+            email: data.email,
+            password: data.password,
+            full_name: fullName,
+          });
 
-        showToast.success('Registration successful! Please sign in.');
-        setIsRegister(false);
-        setFullName('');
-        reset();
+          showToast.success('Registration successful! Please sign in.');
+          setIsRegister(false);
+          setFullName('');
+          reset();
+        } catch (regErr) {
+          const errorMessage = regErr instanceof Error ? regErr.message : 'Registration failed';
+          showToast.error(errorMessage);
+        }
       } else {
-        const response = await apiClient.post<LoginResponse>('/auth/login', {
-          email: data.email,
-          password: data.password,
-        });
+        try {
+          const response = await apiClient.post<LoginResponse>('/auth/login', {
+            email: data.email,
+            password: data.password,
+          });
 
-        apiClient.setTokens({
-          access_token: response.access_token,
-          refresh_token: response.refresh_token,
-        });
+          apiClient.setTokens({
+            access_token: response.access_token,
+            refresh_token: response.refresh_token,
+          });
 
-        localStorage.setItem(
-          'user',
-          JSON.stringify({
-            user_id: response.user_id,
-            email: response.email,
-            full_name: response.full_name,
-          })
-        );
+          localStorage.setItem(
+            'user',
+            JSON.stringify({
+              user_id: response.user_id,
+              email: response.email,
+              full_name: response.full_name,
+            })
+          );
 
-        showToast.success('Login successful!');
-        navigate('/');
+          showToast.success('Login successful!');
+          navigate('/');
+        } catch (loginErr) {
+          const errorMessage = loginErr instanceof Error ? loginErr.message : 'Login failed';
+          showToast.error(errorMessage);
+        }
       }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
-      showToast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
