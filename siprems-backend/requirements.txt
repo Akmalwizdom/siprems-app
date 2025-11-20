@@ -12,3 +12,6 @@ werkzeug
 flask-talisman
 flask-limiter
 marshmallow
+celery
+redis
+python-json-logger

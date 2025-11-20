@@ -18,5 +18,64 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: siprems-redis-broker
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+  celery_worker:
+    build: .
+    container_name: siprems-celery-worker
+    command: celery -A celery_app worker --loglevel=info
+    environment:
+      DB_HOST: db
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MODELS_DIR: /app/models
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - models_volume:/app/models
+    networks:
+      - siprems_network
+
+  celery_beat:
+    build: .
+    container_name: siprems-celery-beat
+    command: celery -A celery_app beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      DB_HOST: db
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      MODELS_DIR: /app/models
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - models_volume:/app/models
+    networks:
+      - siprems_network
+
 volumes:
   pgdata:
+  redis_data:
+  models_volume:
+
+networks:
+  siprems_network:
+    driver: bridge
