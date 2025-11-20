@@ -61,10 +61,11 @@ class Config:
     MODELS_META_DIR = os.path.join(MODELS_DIR, 'meta')
 
     # Scheduled Tasks Configuration
+    from celery.schedules import crontab
     CELERY_BEAT_SCHEDULE = {
         'train-all-models-nightly': {
             'task': 'tasks.ml_tasks.train_all_models',
-            'schedule': 7200.0,  # Every 2 hours for demo, change to crontab(hour=2, minute=0) for nightly
+            'schedule': crontab(hour=2, minute=0),  # Run at 2:00 AM UTC
         },
     }
 
