@@ -1,0 +1,21 @@
+assert_used:
+  skips: ['*/tests/*']
+
+exclude_dirs:
+  - tests
+  - venv
+  - .venv
+  - env
+  - migrations
+  - alembic
+
+severity_level: medium
+confidence_level: medium
+
+plugins:
+  - name: assert_used
+    enabled: true
+  - name: hardcoded_password_string
+    enabled: true
+  - name: hardcoded_bind_all_interfaces
+    enabled: true
