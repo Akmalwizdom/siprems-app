@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
+import { Toaster } from 'sonner';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 import TransactionsPage from './components/TransactionsPage';
