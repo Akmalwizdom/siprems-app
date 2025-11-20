@@ -171,18 +171,45 @@ Supports multiple environments:
 - Production
 - Testing
 
-### Database Access
-Database operations use context managers for safety:
+### Database Access - SQLAlchemy ORM
+
+Database operations now use SQLAlchemy ORM with session management:
+
+```python
+from utils.db_session import get_db_session
+from models.orm.product import Product
+
+# Query with ORM
+with get_db_session() as session:
+    product = session.query(Product).filter_by(sku="BRD-001").first()
+    products = session.query(Product).limit(10).all()
+
+    # Create new record
+    new_product = Product(name="Item", category="Cat", sku="NEW", price=10.0, stock=5)
+    session.add(new_product)
+    # Commit happens automatically on context manager exit
+```
+
+**Benefits of ORM:**
+- Type-safe queries with full IDE support
+- Automatic SQL injection prevention
+- Efficient connection pooling
+- Transparent transaction management
+- Easy to test with mock data
+
+### Legacy Database Access (Deprecated)
+
+Raw SQL operations are still supported for backward compatibility:
 
 ```python
 from utils.db import db_query, db_execute
 
-# For SELECT queries
+# Legacy - prefer ORM for new code
 result = db_query("SELECT * FROM products", fetch_all=True)
-
-# For INSERT/UPDATE/DELETE
 result = db_execute("INSERT INTO products ...", params)
 ```
+
+**Note**: New code should use SQLAlchemy ORM exclusively. See ORM_MIGRATION_GUIDE.md for details.
 
 ## Service Integration
 
