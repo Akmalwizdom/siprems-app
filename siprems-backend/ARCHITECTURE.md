@@ -38,7 +38,7 @@ siprems-backend/
 │   ├── user_model.py
 │   ├── product_model.py
 │   ├── transaction_model.py
-│   └─��� event_model.py
+│   └── event_model.py
 ├── utils/               # Utilities and helpers
 │   ├── __init__.py
 │   ├── config.py        # Configuration management
@@ -121,8 +121,30 @@ class ProductModel:
 ```
 
 ### 4. **Utils Layer** (`utils/`)
+
+#### Core Utilities
 - **config.py**: Configuration management with support for multiple environments
-- **db.py**: Database connection utilities and helper functions
+- **db_session.py**: SQLAlchemy session factory and context manager
+- **db.py**: Legacy database utilities (deprecated, for backward compatibility)
+
+#### Service Utilities
+- **cache_service.py**: Redis caching with key expiration
+- **metrics_service.py**: Application metrics collection
+- **password_handler.py**: Password hashing and verification
+
+#### Key Session Management
+```python
+from utils.db_session import get_db_session, init_db_session
+
+# Initialize once on app startup
+session_factory = init_db_session(config)
+
+# Use in any module
+with get_db_session() as session:
+    # Database operations with automatic transaction handling
+    user = session.query(User).first()
+    # Auto-commits on successful exit, auto-rolls back on exception
+```
 
 ## Data Flow
 
