@@ -6,7 +6,6 @@ from typing import Optional
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import declarative_base
 
-# Create Base here for import compatibility
 Base = declarative_base()
 
 
