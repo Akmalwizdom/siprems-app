@@ -27,16 +27,21 @@ from routes import (
     task_bp,
 )
 
-def create_app(config=None):
+def create_app(config: Optional[object] = None) -> Flask:
     """
     Application factory function.
-    Creates and configures the Flask application.
+
+    Creates and configures the Flask application with SQLAlchemy ORM,
+    security, caching, and service integrations.
 
     Args:
         config: Configuration object (optional). If None, uses environment config.
 
     Returns:
-        Configured Flask application instance
+        Configured Flask application instance with all dependencies initialized.
+
+    Raises:
+        Exception: If database connection or service initialization fails.
     """
     app = Flask(__name__)
 
@@ -45,16 +50,22 @@ def create_app(config=None):
         config = get_config()
     app.config.from_object(config)
 
+    # Initialize database session management
+    session_factory = init_db_session(config)
+    app.db_session_factory = session_factory
+    app.get_db_session = get_db_session
+    app.get_db_engine = get_db_engine
+
     # Initialize response compression
     Compress(app)
 
     # Configure CORS with whitelist
     cors_config = {
-        'origins': config.CORS_ALLOWED_ORIGINS,
-        'methods': ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        'allow_headers': ['Content-Type', 'Authorization'],
-        'supports_credentials': True,
-        'max_age': 3600
+        "origins": config.CORS_ALLOWED_ORIGINS,
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
+        "max_age": 3600,
     }
     CORS(app, resources={r"/api/*": cors_config}, **cors_config)
 
@@ -65,20 +76,20 @@ def create_app(config=None):
         strict_transport_security=True,
         strict_transport_security_max_age=31536000,
         content_security_policy={
-            'default-src': "'self'",
-            'script-src': "'self'",
-            'style-src': "'self' 'unsafe-inline'",
-            'img-src': "'self' data:",
+            "default-src": "'self'",
+            "script-src": "'self'",
+            "style-src": "'self' 'unsafe-inline'",
+            "img-src": "'self' data:",
         },
-        content_security_policy_nonce_in=['script-src']
+        content_security_policy_nonce_in=["script-src"],
     )
 
     # Initialize rate limiter
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        default_limits=['100 per hour'],
-        storage_uri=config.RATELIMIT_STORAGE_URL
+        default_limits=["100 per hour"],
+        storage_uri=config.RATELIMIT_STORAGE_URL,
     )
 
     # Initialize cache service
@@ -90,7 +101,7 @@ def create_app(config=None):
     app.metrics_service = metrics_service
 
     # Initialize services
-    ml_engine = MLEngine(get_db_connection)
+    ml_engine = MLEngine(get_db_engine)
     app.ml_engine = ml_engine
 
     prediction_service = PredictionService(ml_engine)
