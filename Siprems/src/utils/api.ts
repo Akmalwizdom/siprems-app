@@ -112,8 +112,14 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || `HTTP ${response.status}`);
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorResponse = await response.json();
+        errorMessage = errorResponse.message || errorResponse.error || errorMessage;
+      } catch {
+        // If response is not valid JSON, use default message
+      }
+      throw new Error(errorMessage);
     }
 
     return response.json();
