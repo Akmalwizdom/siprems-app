@@ -215,13 +215,14 @@ def create_app(config: Optional[object] = None) -> Flask:
 
     return app
 
+
 # Create app instance for backward compatibility
-app = create_app()
+app: Flask = create_app()
 
 # For backward compatibility, expose key services at module level
-ml_engine = app.ml_engine
-prediction_service = app.prediction_service
-chat_service = app.chat_service
+ml_engine: MLEngine = app.ml_engine
+prediction_service: PredictionService = app.prediction_service
+chat_service: ChatService = app.chat_service
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True, port=5000)
