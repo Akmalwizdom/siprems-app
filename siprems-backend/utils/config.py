@@ -15,6 +15,18 @@ class Config:
     DB_PASSWORD = os.getenv('DB_PASSWORD', 'mysecretpassword')
     DB_PORT = os.getenv('DB_PORT', '5432')
 
+    # SQLAlchemy Configuration
+    @property
+    def SQLALCHEMY_DATABASE_URI(self):
+        """Build database URI for SQLAlchemy."""
+        return (
+            f"postgresql://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        )
+
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ECHO = os.getenv('SQLALCHEMY_ECHO', 'false').lower() == 'true'
+
     # Gemini AI Configuration
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
