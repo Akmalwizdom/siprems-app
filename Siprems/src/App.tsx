@@ -38,6 +38,7 @@ function App() {
 
   return (
     <Router>
+      <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
 
