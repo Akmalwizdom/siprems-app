@@ -273,64 +273,59 @@ export default function PredictionPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[400px] w-full">
+                  <div style={{ width: '100%', height: '400px' }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={predictionData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
-                          <linearGradient id="colorPredicted" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.1}/>
-                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                          <linearGradient id="colorConfidence" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#BFDBFE" stopOpacity={0.4}/>
+                            <stop offset="100%" stopColor="#BFDBFE" stopOpacity={0}/>
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                        <XAxis 
-                          dataKey="date" 
-                          stroke="#9CA3AF" 
-                          fontSize={12} 
-                          tickLine={false} 
+                        <XAxis
+                          dataKey="date"
+                          stroke="#9CA3AF"
+                          fontSize={12}
+                          tickLine={false}
                           axisLine={false}
-                          // Jika periode panjang, kurangi jumlah label di sumbu X agar rapi
                           interval={parseInt(forecastDays) > 30 ? 'preserveStartEnd' : 0}
                         />
                         <YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} />
-                        <Tooltip 
+                        <Tooltip
                           contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
                           labelStyle={{ color: '#374151', fontWeight: 'bold' }}
                         />
                         <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                        
-                        {/* Area Kepercayaan (Confidence Interval) */}
+
                         <Area
                           type="monotone"
-                          dataKey="upper"
+                          dataKey="lower"
+                          fill="url(#colorConfidence)"
                           stroke="none"
-                          fill="#BFDBFE"
-                          fillOpacity={0.3}
+                          isAnimationActive={true}
                           name="Confidence Range"
                         />
                         <Area
                           type="monotone"
-                          dataKey="lower"
+                          dataKey="upper"
+                          fill="url(#colorConfidence)"
                           stroke="none"
-                          fill="#fff" // Hack untuk membuat 'lubang' di bawah lower bound agar terlihat seperti range
-                          fillOpacity={1}
-                          name="Hidden"
-                          legendType='none'
-                          tooltipType='none'
+                          isAnimationActive={true}
+                          legendType="none"
+                          tooltipType="none"
                         />
-                        
-                        {/* Garis Aktual */}
+
                         <Line
                           type="monotone"
                           dataKey="actual"
                           stroke="#9CA3AF"
                           strokeWidth={2}
-                          dot={parseInt(forecastDays) <= 30 ? { r: 3, fill: "#9CA3AF" } : false} // Hilangkan dot jika periode panjang
+                          dot={parseInt(forecastDays) <= 30 ? { r: 3, fill: "#9CA3AF" } : false}
                           name="Actual Sales"
                           connectNulls
                         />
-                        
-                        {/* Garis Prediksi */}
+
                         <Line
                           type="monotone"
                           dataKey="predicted"
