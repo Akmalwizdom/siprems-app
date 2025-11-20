@@ -38,7 +38,7 @@ siprems-backend/
 │   ├── user_model.py
 │   ├── product_model.py
 │   ├── transaction_model.py
-│   └── event_model.py
+│   └─��� event_model.py
 ├── utils/               # Utilities and helpers
 │   ├── __init__.py
 │   ├── config.py        # Configuration management
@@ -82,10 +82,43 @@ siprems-backend/
 - Implements domain-specific logic
 
 ### 3. **Models Layer** (`models/`)
-- Data access layer (DAL) - responsible for database queries
+The models layer consists of two parts:
+
+#### ORM Models (`models/orm/`)
+- SQLAlchemy declarative models
+- Object-oriented database schema definitions
+- Automatic relationship management
+- Built-in data validation at ORM level
+
+Example ORM model:
+```python
+from sqlalchemy import Column, Integer, String, DateTime
+from models.orm import Base
+
+class Product(Base):
+    __tablename__ = "products"
+    product_id = Column(Integer, primary_key=True)
+    sku = Column(String(50), unique=True, index=True)
+    name = Column(String(255), nullable=False)
+    # ... other columns
+```
+
+#### Data Access Layer (`models/*.py`)
+- Static methods for all database operations
 - CRUD operations for each entity
-- SQL execution and result mapping
+- Complex query logic
+- Transforms ORM objects to/from dictionaries
 - No business logic - pure data access
+
+Example DAL:
+```python
+class ProductModel:
+    @staticmethod
+    def get_all_products(limit=100, offset=0) -> List[Dict]:
+        with get_db_session() as session:
+            products = session.query(Product).limit(limit).offset(offset).all()
+            return [p.to_dict() for p in products]
+```
 
 ### 4. **Utils Layer** (`utils/`)
 - **config.py**: Configuration management with support for multiple environments
