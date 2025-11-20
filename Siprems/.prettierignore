@@ -1,0 +1,11 @@
+dist
+build
+node_modules
+.git
+.vscode
+.idea
+*.lock
+package-lock.json
+yarn.lock
+.DS_Store
+*.log
