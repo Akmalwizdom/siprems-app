@@ -2,6 +2,7 @@
 
 from typing import List, Optional, Dict, Any
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from models.orm.event import Event
