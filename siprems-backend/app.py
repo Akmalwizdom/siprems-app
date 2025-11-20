@@ -109,6 +109,17 @@ def create_app(config=None):
     def health():
         return jsonify({'status': 'healthy'}), 200
 
+    # Metrics endpoint
+    @app.route('/metrics', methods=['GET'])
+    def metrics():
+        metrics_service = get_metrics_service()
+        return jsonify(metrics_service.export_metrics()), 200
+
+    # Cache stats endpoint
+    @app.route('/cache-stats', methods=['GET'])
+    def cache_stats():
+        return jsonify(cache_service.get_stats()), 200
+
     # Error handlers
     @app.errorhandler(429)
     def ratelimit_handler(e):
