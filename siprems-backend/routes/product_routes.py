@@ -2,15 +2,31 @@ from flask import Blueprint, request, jsonify
 from services.product_service import ProductService
 from utils.jwt_handler import require_auth
 from utils.validators import ProductSchema, validate_request_data
+from utils.cache_service import get_cache_service, generate_cache_key
+from utils.metrics_service import track_http_request
 
 product_bp = Blueprint('products', __name__, url_prefix='/products')
 
 @product_bp.route('', methods=['GET'])
 @require_auth
+@track_http_request()
 def get_products():
-    """Get all products"""
+    """Get all products with caching"""
     try:
+        # Try to get from cache
+        cache_service = get_cache_service()
+        cache_key = generate_cache_key(prefix='product_list')
+
+        cached_result = cache_service.get(cache_key)
+        if cached_result:
+            return jsonify(cached_result), 200
+
+        # Not in cache, fetch from database
         products = ProductService.get_all_products()
+
+        # Cache the result
+        cache_service.set(cache_key, products, ttl=cache_service.TTL_POLICIES.get('product_list', 1800))
+
         return jsonify(products), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
