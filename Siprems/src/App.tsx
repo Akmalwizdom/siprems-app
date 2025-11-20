@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
@@ -10,14 +10,42 @@ import ProductsPage from './components/ProductsPage';
 import CalendarPage from './components/CalendarPage';
 import Sidebar from './components/Sidebar';
 import TopBar from './components/TopBar';
+import { apiClient } from './utils/api';
 
 type Page = 'login' | 'dashboard' | 'transactions' | 'prediction' | 'insights' | 'settings' | 'products' | 'calendar';
+
+interface User {
+  user_id: number;
+  email: string;
+  full_name: string;
+}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('login');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState('');
   const [darkMode, setDarkMode] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    // Check if user is already logged in
+    const storedUser = localStorage.getItem('user');
+    const accessToken = localStorage.getItem('access_token');
+
+    if (storedUser && accessToken) {
+      try {
+        const userData = JSON.parse(storedUser) as User;
+        setUser(userData);
+        setUsername(userData.full_name);
+        setIsAuthenticated(true);
+        setCurrentPage('dashboard');
+      } catch {
+        localStorage.removeItem('user');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      }
+    }
+  }, []);
 
   const handleLogin = (name: string) => {
     setUsername(name);
@@ -26,8 +54,10 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    apiClient.clearTokens();
     setIsAuthenticated(false);
     setUsername('');
+    setUser(null);
     setCurrentPage('login');
   };
 
