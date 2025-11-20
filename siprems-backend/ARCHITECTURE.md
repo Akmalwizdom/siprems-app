@@ -10,32 +10,60 @@ The backend has been refactored from a monolithic structure to a modular, scalab
 siprems-backend/
 ├── routes/              # Flask Blueprints for endpoints
 │   ├── __init__.py
+│   ├── auth_routes.py
 │   ├── product_routes.py
 │   ├── transaction_routes.py
 │   ├── event_routes.py
 │   ├── prediction_routes.py
 │   ├── chat_routes.py
-│   └── system_routes.py
+│   ├── system_routes.py
+│   └── task_routes.py
 ├── services/            # Business logic layer
 │   ├── __init__.py
+│   ├── user_service.py
 │   ├── product_service.py
 │   ├── transaction_service.py
 │   ├── event_service.py
 │   ├── prediction_service.py
-│   └── chat_service.py
+│   ├── chat_service.py
+│   └── task_service.py
 ├── models/              # Data access layer
+│   ├── orm/             # SQLAlchemy ORM models
+│   │   ├── __init__.py
+│   │   ├── user.py
+│   │   ├── product.py
+│   │   ├── transaction.py
+│   │   └── event.py
 │   ├── __init__.py
+│   ├── user_model.py
 │   ├── product_model.py
 │   ├── transaction_model.py
 │   └── event_model.py
 ├── utils/               # Utilities and helpers
 │   ├── __init__.py
 │   ├── config.py        # Configuration management
-│   └── db.py            # Database utilities
+│   ├── db.py            # Legacy database utilities
+│   ├── db_session.py    # SQLAlchemy session management
+│   ├── cache_service.py # Redis cache service
+│   ├── metrics_service.py # Metrics collection
+│   └── password_handler.py # Password hashing utilities
+├── tasks/               # Celery tasks
+│   ├── __init__.py
+│   └── ml_tasks.py
+├── nginx/               # Nginx configuration
+│   ├── Dockerfile
+│   └── nginx.conf
+├── pgbouncer/           # PostgreSQL connection pooling
+│   ├── pgbouncer.ini
+│   └── users.txt
 ├── app.py               # Application factory and entry point
+├── celery_app.py        # Celery application setup
 ├── ml_engine.py         # Machine learning engine
 ├── seed.py              # Database seeding script
 ├── schema.sql           # Database schema
+├── docker-compose.yml   # Docker compose configuration
+├── requirements.txt     # Python dependencies
+├── ORM_MIGRATION_GUIDE.md # ORM migration guide
 └── ARCHITECTURE.md      # This file
 ```
 
@@ -54,14 +82,69 @@ siprems-backend/
 - Implements domain-specific logic
 
 ### 3. **Models Layer** (`models/`)
-- Data access layer (DAL) - responsible for database queries
+The models layer consists of two parts:
+
+#### ORM Models (`models/orm/`)
+- SQLAlchemy declarative models
+- Object-oriented database schema definitions
+- Automatic relationship management
+- Built-in data validation at ORM level
+
+Example ORM model:
+```python
+from sqlalchemy import Column, Integer, String, DateTime
+from models.orm import Base
+
+class Product(Base):
+    __tablename__ = "products"
+    product_id = Column(Integer, primary_key=True)
+    sku = Column(String(50), unique=True, index=True)
+    name = Column(String(255), nullable=False)
+    # ... other columns
+```
+
+#### Data Access Layer (`models/*.py`)
+- Static methods for all database operations
 - CRUD operations for each entity
-- SQL execution and result mapping
+- Complex query logic
+- Transforms ORM objects to/from dictionaries
 - No business logic - pure data access
 
+Example DAL:
+```python
+class ProductModel:
+    @staticmethod
+    def get_all_products(limit=100, offset=0) -> List[Dict]:
+        with get_db_session() as session:
+            products = session.query(Product).limit(limit).offset(offset).all()
+            return [p.to_dict() for p in products]
+```
+
 ### 4. **Utils Layer** (`utils/`)
+
+#### Core Utilities
 - **config.py**: Configuration management with support for multiple environments
-- **db.py**: Database connection utilities and helper functions
+- **db_session.py**: SQLAlchemy session factory and context manager
+- **db.py**: Legacy database utilities (deprecated, for backward compatibility)
+
+#### Service Utilities
+- **cache_service.py**: Redis caching with key expiration
+- **metrics_service.py**: Application metrics collection
+- **password_handler.py**: Password hashing and verification
+
+#### Key Session Management
+```python
+from utils.db_session import get_db_session, init_db_session
+
+# Initialize once on app startup
+session_factory = init_db_session(config)
+
+# Use in any module
+with get_db_session() as session:
+    # Database operations with automatic transaction handling
+    user = session.query(User).first()
+    # Auto-commits on successful exit, auto-rolls back on exception
+```
 
 ## Data Flow
 
@@ -143,18 +226,45 @@ Supports multiple environments:
 - Production
 - Testing
 
-### Database Access
-Database operations use context managers for safety:
+### Database Access - SQLAlchemy ORM
+
+Database operations now use SQLAlchemy ORM with session management:
+
+```python
+from utils.db_session import get_db_session
+from models.orm.product import Product
+
+# Query with ORM
+with get_db_session() as session:
+    product = session.query(Product).filter_by(sku="BRD-001").first()
+    products = session.query(Product).limit(10).all()
+
+    # Create new record
+    new_product = Product(name="Item", category="Cat", sku="NEW", price=10.0, stock=5)
+    session.add(new_product)
+    # Commit happens automatically on context manager exit
+```
+
+**Benefits of ORM:**
+- Type-safe queries with full IDE support
+- Automatic SQL injection prevention
+- Efficient connection pooling
+- Transparent transaction management
+- Easy to test with mock data
+
+### Legacy Database Access (Deprecated)
+
+Raw SQL operations are still supported for backward compatibility:
 
 ```python
 from utils.db import db_query, db_execute
 
-# For SELECT queries
+# Legacy - prefer ORM for new code
 result = db_query("SELECT * FROM products", fetch_all=True)
-
-# For INSERT/UPDATE/DELETE
 result = db_execute("INSERT INTO products ...", params)
 ```
+
+**Note**: New code should use SQLAlchemy ORM exclusively. See ORM_MIGRATION_GUIDE.md for details.
 
 ## Service Integration
 
