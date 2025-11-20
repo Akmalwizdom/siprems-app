@@ -6,6 +6,7 @@ from flask_limiter.util import get_remote_address
 from flask_compress import Compress
 from utils.config import get_config
 from utils.cache_service import init_cache
+from utils.metrics_service import init_metrics, get_metrics_service
 from ml_engine import MLEngine
 from utils.db import get_db_connection
 from services.prediction_service import PredictionService
