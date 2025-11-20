@@ -67,7 +67,7 @@ def create_app(config: Optional[object] = None) -> Flask:
         "supports_credentials": True,
         "max_age": 3600,
     }
-    CORS(app, resources={r"/api/*": cors_config}, **cors_config)
+    CORS(app, resources={r"/api/*": cors_config, r"/auth/*": cors_config}, **cors_config)
 
     # Add security headers
     Talisman(

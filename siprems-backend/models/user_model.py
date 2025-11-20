@@ -42,7 +42,8 @@ class UserModel:
             )
             session.add(user)
             session.flush()
-            return user.to_dict()
+            user_dict = user.to_dict()
+        return user_dict
 
     @staticmethod
     def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
@@ -126,6 +127,7 @@ class UserModel:
 
             if user:
                 user.updated_at = datetime.utcnow()
+                session.flush()
 
     @staticmethod
     def update_user_password(user_id: int, password_hash: str) -> None:
@@ -148,6 +150,7 @@ class UserModel:
             if user:
                 user.password_hash = password_hash
                 user.updated_at = datetime.utcnow()
+                session.flush()
 
     @staticmethod
     def deactivate_user(user_id: int) -> None:
@@ -171,6 +174,7 @@ class UserModel:
             if user:
                 user.is_active = False
                 user.updated_at = datetime.utcnow()
+                session.flush()
 
     @staticmethod
     def activate_user(user_id: int) -> None:
@@ -194,3 +198,4 @@ class UserModel:
             if user:
                 user.is_active = True
                 user.updated_at = datetime.utcnow()
+                session.flush()

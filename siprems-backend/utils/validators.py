@@ -6,7 +6,7 @@ class AuthLoginSchema(Schema):
     email = fields.Email(required=True, error_messages={'required': 'Email is required'})
     password = fields.Str(
         required=True,
-        validate=validate.Length(min=8),
+        validate=validate.Length(min=8, max=255),
         error_messages={'required': 'Password is required'}
     )
     
@@ -23,7 +23,7 @@ class AuthRegisterSchema(Schema):
     email = fields.Email(required=True, error_messages={'required': 'Email is required'})
     password = fields.Str(
         required=True,
-        validate=validate.Length(min=8),
+        validate=validate.Length(min=8, max=255),
         error_messages={'required': 'Password is required'}
     )
     full_name = fields.Str(
