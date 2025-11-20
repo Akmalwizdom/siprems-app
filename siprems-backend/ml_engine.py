@@ -9,10 +9,8 @@ import psycopg2
 import psycopg2.extras
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 
-# Konfigurasi Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
-# Folder untuk menyimpan model
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 META_DIR = os.path.join(MODELS_DIR, "meta")
@@ -20,17 +18,21 @@ META_DIR = os.path.join(MODELS_DIR, "meta")
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(META_DIR, exist_ok=True)
 
-# Helper untuk koneksi database
 def db_query_wrapper(conn_func):
+    """Wrapper for database queries with connection pooling"""
     def execute(query, params=None, fetch_all=True):
         conn = conn_func()
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cur.execute(query, params)
+            if params:
+                cur.execute(query, params)
+            else:
+                cur.execute(query)
             if fetch_all:
                 return cur.fetchall()
             return cur.fetchone()
         finally:
+            cur.close()
             conn.close()
     return execute
 
