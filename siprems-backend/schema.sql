@@ -62,3 +62,14 @@ CREATE TABLE events (
 -- Membuat index pada tanggal transaksi untuk mempercepat query
 CREATE INDEX idx_transaction_date ON transactions(transaction_date);
 CREATE INDEX idx_product_id ON transactions(product_id);
+
+-- Additional indexes for query optimization
+CREATE INDEX idx_products_sku ON products(sku);
+CREATE INDEX idx_products_category ON products(category);
+CREATE INDEX idx_transactions_product_date ON transactions(product_id, transaction_date);
+CREATE INDEX idx_transactions_is_promo ON transactions(is_promo);
+CREATE INDEX idx_transactions_date_range ON transactions(transaction_date DESC);
+CREATE INDEX idx_events_date ON events(event_date);
+CREATE INDEX idx_events_type ON events(type);
+CREATE INDEX idx_users_created_at ON users(created_at);
+CREATE INDEX idx_transactions_quantity_date ON transactions(quantity_sold, transaction_date) WHERE quantity_sold > 0;
