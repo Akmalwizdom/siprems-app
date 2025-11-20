@@ -1,0 +1,13 @@
+dist
+build
+node_modules
+.git
+.vscode
+.idea
+*.lock
+package-lock.json
+yarn.lock
+.env
+.env.local
+.env.*.local
+*.min.js
