@@ -15,7 +15,8 @@ from routes import (
     event_bp,
     prediction_bp,
     chat_bp,
-    system_bp
+    system_bp,
+    task_bp
 )
 
 def create_app(config=None):
@@ -87,6 +88,7 @@ def create_app(config=None):
     app.register_blueprint(prediction_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(system_bp)
+    app.register_blueprint(task_bp)
 
     # Health check endpoint
     @app.route('/health', methods=['GET'])
