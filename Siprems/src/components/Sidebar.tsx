@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { useLocation, Link } from 'react-router-dom';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -10,24 +11,18 @@ import {
   CalendarDays,
 } from 'lucide-react';
 
-type Page = 'dashboard' | 'transactions' | 'prediction' | 'insights' | 'products' | 'calendar' | 'settings';
-
-interface SidebarProps {
-  currentPage: Page;
-  onNavigate: (page: Page) => void;
-}
-
 const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'transactions', label: 'Transactions', icon: ShoppingCart },
-  { id: 'prediction', label: 'Prediction', icon: TrendingUp },
-  { id: 'insights', label: 'Insights', icon: Bot },
-  { id: 'products', label: 'Products', icon: Package },
-  { id: 'calendar', label: 'Calendar', icon: CalendarDays },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+  { id: 'transactions', label: 'Transactions', icon: ShoppingCart, path: '/transactions' },
+  { id: 'prediction', label: 'Prediction', icon: TrendingUp, path: '/prediction' },
+  { id: 'insights', label: 'Insights', icon: Bot, path: '/insights' },
+  { id: 'products', label: 'Products', icon: Package, path: '/products' },
+  { id: 'calendar', label: 'Calendar', icon: CalendarDays, path: '/calendar' },
+  { id: 'settings', label: 'Settings', icon: Settings, path: '/settings' },
 ];
 
-export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+export default function Sidebar() {
+  const location = useLocation();
   return (
     <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
       {/* Logo */}
