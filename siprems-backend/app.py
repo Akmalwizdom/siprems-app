@@ -71,6 +71,10 @@ def create_app(config=None):
         storage_uri=config.RATELIMIT_STORAGE_URL
     )
 
+    # Initialize cache service
+    cache_service = init_cache(config)
+    app.cache_service = cache_service
+
     # Initialize services
     ml_engine = MLEngine(get_db_connection)
     app.ml_engine = ml_engine
