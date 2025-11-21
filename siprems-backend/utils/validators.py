@@ -76,20 +76,29 @@ class TransactionSchema(Schema):
 
 class EventSchema(Schema):
     """Schema for event validation"""
-    event_name = fields.Str(
+    name = fields.Str(
         required=True,
-        validate=validate.Length(min=1, max=255)
+        validate=validate.Length(min=1, max=255),
+        error_messages={'required': 'Event name is required'}
     )
-    event_type = fields.Str(
+    type = fields.Str(
         required=True,
-        validate=validate.OneOf(['holiday', 'promotion', 'seasonal', 'other'])
+        validate=validate.OneOf(['holiday', 'promotion', 'store-closed']),
+        error_messages={'required': 'Event type is required'}
     )
-    impact_percentage = fields.Float(
+    date = fields.Str(
         required=True,
-        validate=validate.Range(min=-100, max=1000)
+        error_messages={'required': 'Event date is required'}
     )
-    event_date = fields.DateTime(required=True)
-    duration_days = fields.Int(validate=validate.Range(min=1))
+    description = fields.Str(
+        required=False,
+        allow_none=True,
+        validate=validate.Length(max=1000)
+    )
+    includeInPrediction = fields.Bool(
+        required=False,
+        missing=True
+    )
 
 
 def validate_request_data(schema_class, data):

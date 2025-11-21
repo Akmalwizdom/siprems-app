@@ -21,32 +21,41 @@ class EventService:
     def create_event(data):
         """Create a new event with validation"""
         # Validation
-        required_fields = ['name', 'date']
+        required_fields = ['name', 'date', 'type']
         for field in required_fields:
             if field not in data:
                 raise ValueError(f"Missing required field: {field}")
-        
+
+        # Validate event type
+        valid_types = ['promotion', 'holiday', 'store-closed']
+        if data['type'] not in valid_types:
+            raise ValueError(f"Invalid event type: {data['type']}")
+
         # Create event
         event = EventModel.create_event(
             event_name=data['name'],
             event_date=data['date'],
             description=data.get('description'),
-            include_in_prediction=data.get('includeInPrediction', True)
+            include_in_prediction=data.get('includeInPrediction', True),
+            event_type=data['type']
         )
-        
+
         return event
     
     @staticmethod
     def delete_event(event_id):
-        """Delete a custom event"""
+        """Delete an event"""
         event = EventModel.get_event_by_id(event_id)
         if not event:
             raise ValueError(f"Event {event_id} not found")
-        
-        if event['type'] != 'custom':
+
+        if event['type'] == 'holiday':
             raise ValueError("Cannot delete holiday events")
-        
-        return EventModel.delete_event(event_id)
+
+        result = EventModel.delete_event(event_id)
+        if not result:
+            raise ValueError("Cannot delete holiday events")
+        return result
     
     @staticmethod
     def get_holidays_for_prediction():
@@ -72,4 +81,3 @@ class EventService:
             })
         
         return formatted if formatted else None
-

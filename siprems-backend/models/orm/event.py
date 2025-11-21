@@ -26,7 +26,7 @@ class Event(Base):
     event_id = Column(Integer, primary_key=True, index=True)
     event_name = Column(String(255), nullable=False)
     event_date = Column(DateTime, nullable=False, index=True)
-    type = Column(String(20), nullable=False, index=True, default="custom")
+    type = Column(String(20), nullable=False, index=True, default="promotion")
     description = Column(Text, nullable=True)
     include_in_prediction = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
