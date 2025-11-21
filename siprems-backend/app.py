@@ -120,6 +120,7 @@ def create_app(config: Optional[object] = None) -> Flask:
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
     app.register_blueprint(system_bp, url_prefix='/api/system')
     app.register_blueprint(task_bp, url_prefix='/api/tasks')
+    app.register_blueprint(settings_bp, url_prefix='/api/settings')
 
     @app.route("/health", methods=["GET"])
     def health() -> tuple:
