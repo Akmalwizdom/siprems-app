@@ -1,3 +1,4 @@
+import { apiClient } from '../utils/api';
 import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Plus, X, Calendar as CalendarIcon, Loader2, AlertTriangle } from 'lucide-react';
@@ -33,8 +34,6 @@ interface EventFormData {
   includeInPrediction: boolean;
 }
 
-const API_URL = 'http://localhost:5000';
-
 // Helper Kalender
 const getDaysInMonth = (date: Date): number => {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -66,9 +65,7 @@ export default function CalendarPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/events`);
-      if (!response.ok) throw new Error('Failed to fetch events');
-      const data: CalendarEvent[] = await response.json();
+      const data = await apiClient.get<CalendarEvent[]>('/events');
       setAllEvents(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
@@ -115,16 +112,7 @@ export default function CalendarPage() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/events`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to add event');
-      }
-      const newEvent: CalendarEvent = await response.json();
+      const newEvent = await apiClient.post<CalendarEvent>('/events', formData);
 
       setAllEvents([...allEvents, newEvent]); // Optimistic update
       setFormData({ name: '', date: '', description: '', includeInPrediction: true });
@@ -137,12 +125,7 @@ export default function CalendarPage() {
 
   const handleDeleteEvent = async (eventId: number) => {
     try {
-      const response = await fetch(`${API_URL}/events/${eventId}`, {
-        method: 'DELETE',
-      });
-      
-      const resData = await response.json();
-      if (!response.ok) throw new Error(resData.error || 'Failed to delete event');
+      await apiClient.delete(`/events/${eventId}`);
       
       setAllEvents(allEvents.filter((e) => e.event_id !== eventId)); // Optimistic update
       toast.success('Event deleted successfully');

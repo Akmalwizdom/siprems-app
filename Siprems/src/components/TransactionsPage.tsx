@@ -1,3 +1,4 @@
+import { apiClient } from '../utils/api';
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -43,7 +44,6 @@ interface Product {
   stock: number;
 }
 
-const API_URL = 'http://localhost:5000';
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -65,16 +65,10 @@ export default function TransactionsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [transRes, prodRes] = await Promise.all([
-        fetch(`${API_URL}/transactions`),
-        fetch(`${API_URL}/products`),
+        const [rawTransData, prodData] = await Promise.all([
+        apiClient.get<RawTransaction[]>('/transactions'),
+        apiClient.get<Product[]>('/products'),
       ]);
-
-      if (!transRes.ok) throw new Error('Failed to fetch transactions');
-      if (!prodRes.ok) throw new Error('Failed to fetch products');
-
-      const rawTransData: RawTransaction[] = await transRes.json();
-      const prodData: Product[] = await prodRes.json();
 
       const cleanTransData: Transaction[] = rawTransData.map((t) => ({
         ...t,
@@ -107,16 +101,7 @@ export default function TransactionsPage() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      const resData = await response.json();
-      if (!response.ok) {
-        throw new Error(resData.error || 'Failed to add transaction');
-      }
+      const resData = await apiClient.post<RawTransaction>('/transactions', data);
 
       const newTransCleaned: Transaction = {
         ...resData,

@@ -1,3 +1,4 @@
+import { apiClient } from '../utils/api';
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -47,7 +48,6 @@ const getStockStatus = (stock: number): { label: string; color: string } => {
   return { label: 'Critical', color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' };
 };
 
-const API_URL = 'http://localhost:5000';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -73,9 +73,7 @@ export default function ProductsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/products`);
-      if (!response.ok) throw new Error('Failed to fetch products');
-      const data: RawProduct[] = await response.json();
+      const data = await apiClient.get<RawProduct[]>('/products');
 
       const cleanData: Product[] = data.map((p) => ({
         ...p,
@@ -111,26 +109,14 @@ export default function ProductsPage() {
   const onSubmit = async (data: ProductFormData) => {
     try {
       if (selectedProduct) {
-        const response = await fetch(`${API_URL}/products/${selectedProduct.sku}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        const resData = await response.json();
-        if (!response.ok) throw new Error(resData.error || 'Failed to update product');
+        await apiClient.put(`/products/${selectedProduct.sku}`, data);
 
         await fetchProducts();
         setIsEditOpen(false);
         resetForm();
         showToast.success('Product updated successfully');
       } else {
-        const response = await fetch(`${API_URL}/products`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-        const resData = await response.json();
-        if (!response.ok) throw new Error(resData.error || 'Failed to add product');
+        await apiClient.post('/products', data);
 
         await fetchProducts();
         setIsAddOpen(false);
@@ -161,12 +147,7 @@ export default function ProductsPage() {
   const handleDeleteProduct = async () => {
     if (!selectedProduct) return;
     try {
-      const response = await fetch(`${API_URL}/products/${selectedProduct.sku}`, {
-        method: 'DELETE',
-      });
-
-      const resData = await response.json();
-      if (!response.ok) throw new Error(resData.error || 'Failed to delete product');
+      await apiClient.delete(`/products/${selectedProduct.sku}`);
 
       await fetchProducts();
       setIsDeleteOpen(false);
