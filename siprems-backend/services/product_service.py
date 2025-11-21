@@ -32,12 +32,12 @@ class ProductService:
         for field in required_fields:
             if field not in data:
                 raise ValueError(f"Missing required field: {field}")
-        
+
         # Check if SKU already exists
         existing = ProductModel.get_product_by_sku(data['sku'])
         if existing:
             raise ValueError(f"Product with SKU {data['sku']} already exists")
-        
+
         # Create product
         return ProductModel.create_product(
             name=data['name'],
@@ -45,7 +45,9 @@ class ProductService:
             price=float(data['price']),
             stock=int(data['stock']),
             sku=data['sku'],
-            variation=data.get('variation')
+            variation=data.get('variation'),
+            cost_price=float(data['cost_price']) if data.get('cost_price') else None,
+            description=data.get('description')
         )
     
     @staticmethod
@@ -55,13 +57,13 @@ class ProductService:
         existing = ProductModel.get_product_by_sku(sku)
         if not existing:
             raise ValueError(f"Product with SKU {sku} not found")
-        
+
         # Validation
         required_fields = ['name', 'category', 'price', 'stock', 'sku']
         for field in required_fields:
             if field not in data:
                 raise ValueError(f"Missing required field: {field}")
-        
+
         # Update product
         return ProductModel.update_product(
             sku=sku,
@@ -70,7 +72,9 @@ class ProductService:
             price=float(data['price']),
             stock=int(data['stock']),
             new_sku=data['sku'],
-            variation=data.get('variation')
+            variation=data.get('variation'),
+            cost_price=float(data['cost_price']) if data.get('cost_price') else None,
+            description=data.get('description')
         )
     
     @staticmethod
