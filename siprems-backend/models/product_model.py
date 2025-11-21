@@ -91,6 +91,8 @@ class ProductModel:
         stock: int,
         sku: str,
         variation: Optional[str] = None,
+        cost_price: Optional[float] = None,
+        description: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a new product.
@@ -102,6 +104,8 @@ class ProductModel:
             stock: Initial stock quantity.
             sku: Stock Keeping Unit (must be unique).
             variation: Optional product variation.
+            cost_price: Optional cost price of the product.
+            description: Optional product description.
 
         Returns:
             Created product dictionary.
@@ -117,6 +121,8 @@ class ProductModel:
                 price=price,
                 stock=stock,
                 sku=sku,
+                cost_price=cost_price,
+                description=description,
             )
             session.add(product)
             session.flush()
@@ -132,6 +138,8 @@ class ProductModel:
         stock: int,
         new_sku: Optional[str] = None,
         variation: Optional[str] = None,
+        cost_price: Optional[float] = None,
+        description: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Update an existing product.
@@ -144,6 +152,8 @@ class ProductModel:
             stock: Updated stock quantity.
             new_sku: New SKU (optional rename).
             variation: Updated product variation.
+            cost_price: Updated cost price.
+            description: Updated product description.
 
         Returns:
             Updated product dictionary or None if not found.
@@ -164,6 +174,10 @@ class ProductModel:
             product.stock = stock
             if new_sku:
                 product.sku = new_sku
+            if cost_price is not None:
+                product.cost_price = cost_price
+            if description is not None:
+                product.description = description
 
             session.flush()
             result = product.to_dict()
