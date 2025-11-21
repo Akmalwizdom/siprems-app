@@ -110,15 +110,15 @@ def create_app(config: Optional[object] = None) -> Flask:
     chat_service = ChatService(config)
     app.chat_service = chat_service
 
-    # Register blueprints
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(product_bp)
-    app.register_blueprint(transaction_bp)
-    app.register_blueprint(event_bp)
-    app.register_blueprint(prediction_bp)
-    app.register_blueprint(chat_bp)
-    app.register_blueprint(system_bp)
-    app.register_blueprint(task_bp)
+    # Register blueprints dengan prefix /api
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(product_bp, url_prefix='/api/products')
+    app.register_blueprint(transaction_bp, url_prefix='/api/transactions')
+    app.register_blueprint(event_bp, url_prefix='/api/events')
+    app.register_blueprint(prediction_bp, url_prefix='/api/predict')
+    app.register_blueprint(chat_bp, url_prefix='/api/chat')
+    app.register_blueprint(system_bp, url_prefix='/api/system')
+    app.register_blueprint(task_bp, url_prefix='/api/tasks')
 
     @app.route("/health", methods=["GET"])
     def health() -> tuple:
