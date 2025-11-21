@@ -89,11 +89,11 @@ export async function getSalesData(timeRange: TimeRange): Promise<SalesDataPoint
   return salesData;
 }
 
-export async function getCategroySales(): Promise<CategorySale[]> {
+export async function getCategorySales(): Promise<CategorySale[]> {
   const data = await fetchDashboardData();
-  
+
   const topProducts = data.stockComparison.slice(0, 5);
-  
+
   return topProducts.map((product, index) => ({
     category: product.product,
     value: product.current,
@@ -103,7 +103,7 @@ export async function getCategroySales(): Promise<CategorySale[]> {
 
 export async function getCriticalStockItems(): Promise<CriticalStockItem[]> {
   const data = await fetchDashboardData();
-  
+
   const criticalItems = data.stockComparison
     .filter((item) => item.current < item.optimal * 0.3)
     .slice(0, 5)
@@ -115,6 +115,3 @@ export async function getCriticalStockItems(): Promise<CriticalStockItem[]> {
 
   return criticalItems;
 }
-
-export const categorySales = getCategroySales();
-export const criticalStockItems = getCriticalStockItems();
