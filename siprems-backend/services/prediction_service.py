@@ -1,12 +1,22 @@
 import pandas as pd
 import os
 import json
+from datetime import datetime
 from models.product_model import ProductModel
 from models.transaction_model import TransactionModel
 
 class PredictionService:
     """Business logic layer for prediction operations"""
-    
+
+    HOLIDAYS = {
+        'eid-al-fitr': {'name': 'Eid Al-Fitr', 'month': 4, 'day': 10},
+        'eid-al-adha': {'name': 'Eid Al-Adha', 'month': 6, 'day': 16},
+        'new-year': {'name': 'New Year', 'month': 1, 'day': 1},
+        'christmas': {'name': 'Christmas', 'month': 12, 'day': 25},
+        'labour-day': {'name': 'Labour Day', 'month': 5, 'day': 1},
+        'national-day': {'name': 'National Day', 'month': 9, 'day': 23},
+    }
+
     def __init__(self, ml_engine):
         """Initialize with ML engine instance"""
         self.ml_engine = ml_engine
