@@ -167,16 +167,30 @@ class MLEngine:
 
     def predict(self, product_sku, days=7):
         """
-        Prediksi dengan handling Promo Masa Depan & Correction Factor
-        """
-        model_path = os.path.join(MODELS_DIR, f"model_{product_sku}.json")
-        meta_path = os.path.join(META_DIR, f"meta_{product_sku}.json")
+        Predict stock levels with future promo handling and correction factor.
 
-        # Train model if it doesn't exist
-        if not os.path.exists(model_path):
-            res = self.train_product_model(product_sku)
-            if res['status'] != 'success':
-                raise Exception(f"Insufficient data to train model for product {product_sku}. Need at least 5 days of sales history.")
+        Args:
+            product_sku: Product SKU identifier
+            days: Number of days to forecast (default 7)
+
+        Returns:
+            DataFrame with predictions (yhat_corrected), confidence intervals, and metadata
+
+        Raises:
+            Exception: If model cannot be trained or product lacks historical data
+        """
+        try:
+            model_path = os.path.join(MODELS_DIR, f"model_{product_sku}.json")
+            meta_path = os.path.join(META_DIR, f"meta_{product_sku}.json")
+
+            # Train model if it doesn't exist
+            if not os.path.exists(model_path):
+                res = self.train_product_model(product_sku)
+                if res['status'] != 'success':
+                    raise Exception(f"Insufficient data to train model for product {product_sku}. Need at least 5 days of sales history.")
+        except Exception as e:
+            logging.error(f"Error in predict setup for {product_sku}: {e}")
+            raise
 
         # Load Model
         with open(model_path, 'r') as f:
