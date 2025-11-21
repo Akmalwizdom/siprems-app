@@ -64,7 +64,9 @@ class ApiClient {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
-        headers: this.getHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ refresh_token: this.refreshToken })
       });
 
@@ -77,7 +79,7 @@ class ApiClient {
       return this.accessToken;
     } catch (error) {
       this.clearTokens();
-      window.location.href = '/';
+      window.location.href = '/login';
       throw error;
     }
   }
