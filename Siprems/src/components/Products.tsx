@@ -3,7 +3,7 @@ import { Plus, Edit2, Trash2, Search, Upload, X } from 'lucide-react';
 import { mockProducts } from '../utils/mockData';
 import { Product } from '../types';
 
-export default function ProductsPage() {
+export function Products() {
   const [products, setProducts] = useState<Product[]>(mockProducts);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);

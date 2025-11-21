@@ -52,14 +52,21 @@ class ProductSchema(Schema):
         validate=validate.Length(min=3, max=50),
         error_messages={'required': 'SKU is required'}
     )
-    product_name = fields.Str(
+    name = fields.Str(
         required=True,
         validate=validate.Length(min=1, max=255),
         error_messages={'required': 'Product name is required'}
     )
-    base_price = fields.Float(required=True, validate=validate.Range(min=0))
-    reorder_level = fields.Int(required=True, validate=validate.Range(min=0))
-    lead_time_days = fields.Int(required=True, validate=validate.Range(min=0))
+    category = fields.Str(
+        required=True,
+        validate=validate.Length(min=1, max=100),
+        error_messages={'required': 'Category is required'}
+    )
+    price = fields.Float(required=True, validate=validate.Range(min=0))
+    cost_price = fields.Float(required=False, validate=validate.Range(min=0), allow_none=True)
+    stock = fields.Int(required=True, validate=validate.Range(min=0))
+    variation = fields.Str(required=False, validate=validate.Length(max=255), allow_none=True)
+    description = fields.Str(required=False, validate=validate.Length(max=1000), allow_none=True)
 
 
 class TransactionSchema(Schema):

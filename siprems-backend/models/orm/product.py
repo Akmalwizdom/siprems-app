@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Index
+from sqlalchemy import Column, Integer, String, Float, DateTime, Index, Text
 from models.orm.base import Base
 
 
@@ -17,8 +17,10 @@ class Product(Base):
         name: Product name.
         category: Product category for classification.
         variation: Product variation or variant type.
-        price: Current unit price.
+        cost_price: Cost price of the product.
+        price: Selling price of the product.
         stock: Current stock quantity.
+        description: Product description.
         created_at: Product creation timestamp.
     """
 
@@ -29,8 +31,10 @@ class Product(Base):
     name = Column(String(255), nullable=False)
     category = Column(String(100), nullable=False, index=True)
     variation = Column(String(255), nullable=True)
+    cost_price = Column(Float, nullable=True)
     price = Column(Float, nullable=False)
     stock = Column(Integer, default=0, nullable=False)
+    description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -54,7 +58,9 @@ class Product(Base):
             "name": self.name,
             "category": self.category,
             "variation": self.variation,
+            "cost_price": self.cost_price,
             "price": self.price,
             "stock": self.stock,
+            "description": self.description,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
