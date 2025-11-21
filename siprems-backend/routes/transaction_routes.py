@@ -46,3 +46,53 @@ def get_transaction(transaction_id):
         return jsonify({'error': str(e)}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@transaction_bp.route('/checkout', methods=['POST'])
+@require_auth
+def checkout():
+    """Process a POS checkout"""
+    try:
+        data = request.get_json()
+
+        if not data or 'items' not in data:
+            return jsonify({'error': 'Invalid checkout data'}), 400
+
+        items = data.get('items', [])
+        if not items or len(items) == 0:
+            return jsonify({'error': 'Cart cannot be empty'}), 400
+
+        # Create transactions for each item in the cart
+        transactions = []
+        for item in items:
+            product_id = item.get('product_id') or item.get('product', {}).get('id')
+            quantity = item.get('quantity', 0)
+            price = item.get('product', {}).get('sellingPrice', 0)
+
+            if quantity <= 0:
+                return jsonify({'error': f'Invalid quantity for product'}), 400
+
+            transaction_data = {
+                'product_sku': product_id,
+                'quantity': quantity,
+            }
+            transaction = TransactionService.create_transaction(transaction_data)
+            transactions.append(transaction)
+
+        subtotal = data.get('subtotal', 0)
+        tax = data.get('tax', 0)
+        total = data.get('total', 0)
+
+        return jsonify({
+            'success': True,
+            'transactions': transactions,
+            'summary': {
+                'subtotal': subtotal,
+                'tax': tax,
+                'total': total,
+                'items_count': len(items)
+            }
+        }), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
