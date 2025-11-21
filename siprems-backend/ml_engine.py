@@ -55,14 +55,25 @@ class MLEngine:
             return pd.DataFrame()
 
     def get_holidays(self):
-        """Mengambil data hari libur."""
-        query = "SELECT event_name as holiday, event_date as ds FROM events WHERE include_in_prediction = TRUE;"
-        df = pd.DataFrame(self.get_db_connection(query, fetch_all=True))
-        if not df.empty:
-            df['ds'] = pd.to_datetime(df['ds'])
-            df['lower_window'] = -2
-            df['upper_window'] = 1
-        return df if not df.empty else None
+        """Fetch holiday data from events table."""
+        query = text("""
+            SELECT event_name as holiday, event_date as ds
+            FROM events
+            WHERE include_in_prediction = TRUE
+        """)
+        try:
+            engine = self.get_db_engine()
+            with engine.connect() as conn:
+                result = conn.execute(query).fetchall()
+                df = pd.DataFrame(result) if result else pd.DataFrame()
+                if not df.empty:
+                    df['ds'] = pd.to_datetime(df['ds'])
+                    df['lower_window'] = -2
+                    df['upper_window'] = 1
+                return df if not df.empty else None
+        except Exception as e:
+            logging.error(f"Error fetching holidays: {e}")
+            return None
 
     def train_product_model(self, product_sku):
         """
