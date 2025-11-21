@@ -75,13 +75,17 @@ class PredictionService:
         for _, row in chart_df.iterrows():
             date_str = row['ds'].strftime('%Y-%m-%d')
             actual_val = actual_map.get(date_str, None)
-            
+
+            is_holiday, holiday_name = self._check_holiday(row['ds'])
+
             chart_data.append({
                 'date': date_str,
-                'actual': actual_val,
+                'historical': actual_val,
                 'predicted': float(row['yhat_corrected']),
                 'lower': float(row['yhat_lower_corrected']),
-                'upper': float(row['yhat_upper_corrected'])
+                'upper': float(row['yhat_upper_corrected']),
+                'isHoliday': is_holiday,
+                'holidayName': holiday_name
             })
         
         if not chart_data:
