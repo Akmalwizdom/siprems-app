@@ -6,5 +6,6 @@ from routes.prediction_routes import prediction_bp
 from routes.chat_routes import chat_bp
 from routes.system_routes import system_bp
 from routes.task_routes import task_bp
+from routes.settings_routes import settings_bp
 
-__all__ = ['auth_bp', 'product_bp', 'transaction_bp', 'event_bp', 'prediction_bp', 'chat_bp', 'system_bp', 'task_bp']
+__all__ = ['auth_bp', 'product_bp', 'transaction_bp', 'event_bp', 'prediction_bp', 'chat_bp', 'system_bp', 'task_bp', 'settings_bp']
