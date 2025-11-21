@@ -42,7 +42,7 @@ export default function Dashboard() {
         const [metricsData, salesTrendData, categoriesData, criticalItems] = await Promise.all([
           getDashboardMetrics(selectedRange),
           getSalesData(selectedRange),
-          getCategroySales(),
+          getCategorySales(),
           getCriticalStockItems(),
         ]);
 
