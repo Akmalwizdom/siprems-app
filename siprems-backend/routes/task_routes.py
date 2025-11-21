@@ -3,7 +3,7 @@ from utils.jwt_handler import require_auth
 from services.task_service import TaskService
 from tasks.ml_tasks import train_product_model_task, train_all_models
 
-task_bp = Blueprint('tasks', __name__, url_prefix='/tasks')
+task_bp = Blueprint('tasks', __name__)
 
 
 @task_bp.route('/<task_id>', methods=['GET'])

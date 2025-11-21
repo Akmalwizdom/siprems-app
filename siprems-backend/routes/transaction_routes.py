@@ -3,7 +3,7 @@ from services.transaction_service import TransactionService
 from utils.jwt_handler import require_auth
 from utils.validators import TransactionSchema, validate_request_data
 
-transaction_bp = Blueprint('transactions', __name__, url_prefix='/transactions')
+transaction_bp = Blueprint('transactions', __name__)
 
 @transaction_bp.route('', methods=['GET'])
 @require_auth

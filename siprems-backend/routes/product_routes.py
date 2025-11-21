@@ -5,7 +5,7 @@ from utils.validators import ProductSchema, validate_request_data
 from utils.cache_service import get_cache_service, generate_cache_key
 from utils.metrics_service import track_http_request
 
-product_bp = Blueprint('products', __name__, url_prefix='/products')
+product_bp = Blueprint('products', __name__)
 
 @product_bp.route('', methods=['GET'])
 @require_auth

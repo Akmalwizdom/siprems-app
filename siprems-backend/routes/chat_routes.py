@@ -3,7 +3,7 @@ from utils.jwt_handler import require_auth
 from utils.metrics_service import track_http_request
 import uuid
 
-chat_bp = Blueprint('chat', __name__, url_prefix='/chat')
+chat_bp = Blueprint('chat', __name__)
 
 @chat_bp.route('', methods=['POST'])
 @require_auth

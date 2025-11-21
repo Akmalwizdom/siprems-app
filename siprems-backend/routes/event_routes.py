@@ -3,7 +3,7 @@ from services.event_service import EventService
 from utils.jwt_handler import require_auth
 from utils.validators import EventSchema, validate_request_data
 
-event_bp = Blueprint('events', __name__, url_prefix='/events')
+event_bp = Blueprint('events', __name__)
 
 @event_bp.route('', methods=['GET'])
 @require_auth

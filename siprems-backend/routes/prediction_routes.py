@@ -5,7 +5,7 @@ from utils.metrics_service import track_http_request
 from tasks.ml_tasks import predict_stock_task
 from services.task_service import TaskService
 
-prediction_bp = Blueprint('predictions', __name__, url_prefix='/predict')
+prediction_bp = Blueprint('predictions', __name__)
 
 @prediction_bp.route('', methods=['POST'])
 @require_auth
