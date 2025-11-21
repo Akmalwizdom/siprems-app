@@ -27,27 +27,29 @@ class MLEngine:
         Fetch sales data with promo status, aggregated by day.
         Returns DataFrame with ds (date), y (quantity), and promo (status) columns.
         """
-        query = """
+        query = text("""
             SELECT
                 DATE(t.transaction_date) as ds,
                 SUM(t.quantity_sold) as y,
                 MAX(CASE WHEN t.is_promo THEN 1 ELSE 0 END) as promo
             FROM transactions t
             JOIN products p ON t.product_id = p.product_id
-            WHERE p.sku = %s
+            WHERE p.sku = :sku
             GROUP BY DATE(t.transaction_date)
-            ORDER BY ds ASC;
-        """
+            ORDER BY ds ASC
+        """)
         try:
-            result = self.get_db_connection(query, (product_sku,), fetch_all=True)
-            df = pd.DataFrame(result) if result else pd.DataFrame()
+            engine = self.get_db_engine()
+            with engine.connect() as conn:
+                result = conn.execute(query, {"sku": product_sku}).fetchall()
+                df = pd.DataFrame(result) if result else pd.DataFrame()
 
-            if not df.empty:
-                df['ds'] = pd.to_datetime(df['ds'])
-                df['y'] = pd.to_numeric(df['y'], errors='coerce').fillna(0).astype(int)
-                df['promo'] = pd.to_numeric(df['promo'], errors='coerce').fillna(0).astype(int)
+                if not df.empty:
+                    df['ds'] = pd.to_datetime(df['ds'])
+                    df['y'] = pd.to_numeric(df['y'], errors='coerce').fillna(0).astype(int)
+                    df['promo'] = pd.to_numeric(df['promo'], errors='coerce').fillna(0).astype(int)
 
-            return df
+                return df
         except Exception as e:
             logging.error(f"Error fetching sales data for {product_sku}: {e}")
             return pd.DataFrame()
