@@ -98,27 +98,26 @@ class EventModel:
     @staticmethod
     def delete_event(event_id: int) -> Optional[Dict[str, Any]]:
         """
-        Delete a custom event.
+        Delete an event.
 
-        Only custom events can be deleted. Holiday events are read-only.
+        Only user-created events can be deleted. Holiday events are read-only.
 
         Args:
             event_id: Unique event identifier to delete.
 
         Returns:
-            Deleted event dictionary or None if not found or not custom type.
+            Deleted event dictionary or None if not found or not deletable type.
 
         Raises:
             Exception: Database operation errors.
         """
         with get_db_session() as session:
-            event = (
-                session.query(Event)
-                .filter(and_(Event.event_id == event_id, Event.type == "custom"))
-                .first()
-            )
+            event = session.query(Event).filter(Event.event_id == event_id).first()
 
             if not event:
+                return None
+
+            if event.type == "holiday":
                 return None
 
             result = event.to_dict()
