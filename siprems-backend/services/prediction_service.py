@@ -129,6 +129,21 @@ class PredictionService:
             'accuracy': round(accuracy_score, 1)
         }
     
+    def _check_holiday(self, date):
+        """
+        Check if a date matches any known holiday.
+
+        Args:
+            date: datetime object
+
+        Returns:
+            tuple: (is_holiday: bool, holiday_name: str)
+        """
+        for holiday_key, holiday_info in self.HOLIDAYS.items():
+            if date.month == holiday_info['month'] and date.day == holiday_info['day']:
+                return True, holiday_info['name']
+        return False, ''
+
     @staticmethod
     def _get_model_accuracy(product_sku):
         """Get model accuracy from metadata file"""
