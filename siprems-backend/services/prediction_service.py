@@ -1,12 +1,22 @@
 import pandas as pd
 import os
 import json
+from datetime import datetime
 from models.product_model import ProductModel
 from models.transaction_model import TransactionModel
 
 class PredictionService:
     """Business logic layer for prediction operations"""
-    
+
+    HOLIDAYS = {
+        'eid-al-fitr': {'name': 'Eid Al-Fitr', 'month': 4, 'day': 10},
+        'eid-al-adha': {'name': 'Eid Al-Adha', 'month': 6, 'day': 16},
+        'new-year': {'name': 'New Year', 'month': 1, 'day': 1},
+        'christmas': {'name': 'Christmas', 'month': 12, 'day': 25},
+        'labour-day': {'name': 'Labour Day', 'month': 5, 'day': 1},
+        'national-day': {'name': 'National Day', 'month': 9, 'day': 23},
+    }
+
     def __init__(self, ml_engine):
         """Initialize with ML engine instance"""
         self.ml_engine = ml_engine
@@ -65,13 +75,17 @@ class PredictionService:
         for _, row in chart_df.iterrows():
             date_str = row['ds'].strftime('%Y-%m-%d')
             actual_val = actual_map.get(date_str, None)
-            
+
+            is_holiday, holiday_name = self._check_holiday(row['ds'])
+
             chart_data.append({
                 'date': date_str,
-                'actual': actual_val,
+                'historical': actual_val,
                 'predicted': float(row['yhat_corrected']),
                 'lower': float(row['yhat_lower_corrected']),
-                'upper': float(row['yhat_upper_corrected'])
+                'upper': float(row['yhat_upper_corrected']),
+                'isHoliday': is_holiday,
+                'holidayName': holiday_name
             })
         
         if not chart_data:
@@ -80,29 +94,29 @@ class PredictionService:
         # Generate restock recommendations
         future_forecast = forecast.tail(forecast_days)
         total_predicted_sales = future_forecast['yhat_corrected'].sum()
-        
+
         # Calculate buffer based on forecast window
         buffer_percent = 1.2 if forecast_days <= 7 else 1.1
-        optimal_stock = int(round(total_predicted_sales * buffer_percent))
+        predicted_demand = int(round(total_predicted_sales))
         current_stock = int(product_info['stock'])
-        
-        gap = optimal_stock - current_stock
-        
+
+        gap = predicted_demand - current_stock
+        recommended_restock = max(0, gap)
+
         if gap > 0:
-            suggestion = f"Restock +{int(gap)} unit"
-            urgency = "high" if gap > current_stock else "medium"
-            trend = "up"
+            if gap > current_stock:
+                urgency = "high"
+            else:
+                urgency = "medium"
         else:
-            suggestion = "Stok Aman"
             urgency = "low"
-            trend = "down"
-        
+
         recommendations = [{
-            'product': product_info['name'],
-            'current': current_stock,
-            'optimal': optimal_stock,
-            'trend': trend,
-            'suggestion': suggestion,
+            'productId': product_info.get('product_id', ''),
+            'productName': product_info['name'],
+            'currentStock': current_stock,
+            'predictedDemand': predicted_demand,
+            'recommendedRestock': recommended_restock,
             'urgency': urgency
         }]
         
@@ -115,6 +129,21 @@ class PredictionService:
             'accuracy': round(accuracy_score, 1)
         }
     
+    def _check_holiday(self, date):
+        """
+        Check if a date matches any known holiday.
+
+        Args:
+            date: datetime object
+
+        Returns:
+            tuple: (is_holiday: bool, holiday_name: str)
+        """
+        for holiday_key, holiday_info in self.HOLIDAYS.items():
+            if date.month == holiday_info['month'] and date.day == holiday_info['day']:
+                return True, holiday_info['name']
+        return False, ''
+
     @staticmethod
     def _get_model_accuracy(product_sku):
         """Get model accuracy from metadata file"""

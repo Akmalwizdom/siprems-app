@@ -188,3 +188,61 @@ export const mockProducts: Product[] = [
     stock: 120,
   },
 ];
+
+export const predictionData = [
+  { date: 'Week 1', historical: 4200, predicted: 4100, isHoliday: false, holidayName: '' },
+  { date: 'Week 2', historical: 4800, predicted: 4900, isHoliday: false, holidayName: '' },
+  { date: 'Week 3', historical: 5100, predicted: 5200, isHoliday: false, holidayName: '' },
+  { date: 'Week 4', historical: 4600, predicted: 4700, isHoliday: false, holidayName: '' },
+  { date: 'Week 5', historical: 5400, predicted: 5500, isHoliday: false, holidayName: '' },
+  { date: 'Week 6', historical: 7200, predicted: 8100, isHoliday: true, holidayName: 'Eid Al-Fitr' },
+  { date: 'Week 7', historical: 8100, predicted: 9200, isHoliday: true, holidayName: 'Eid Al-Fitr' },
+  { date: 'Week 8', historical: 5800, predicted: 5900, isHoliday: false, holidayName: '' },
+  { date: 'Week 9', historical: 5300, predicted: 5400, isHoliday: false, holidayName: '' },
+  { date: 'Week 10', historical: 6100, predicted: 6200, isHoliday: false, holidayName: '' },
+  { date: 'Week 11', historical: 8900, predicted: 9800, isHoliday: true, holidayName: 'New Year' },
+  { date: 'Week 12', historical: 7200, predicted: 7800, isHoliday: false, holidayName: '' },
+];
+
+export const restockRecommendations = [
+  {
+    productId: 'prod-004',
+    productName: 'Coffee Mug',
+    currentStock: 200,
+    predictedDemand: 450,
+    recommendedRestock: 350,
+    urgency: 'high',
+  },
+  {
+    productId: 'prod-003',
+    productName: 'Desk Lamp',
+    currentStock: 28,
+    predictedDemand: 85,
+    recommendedRestock: 75,
+    urgency: 'high',
+  },
+  {
+    productId: 'prod-001',
+    productName: 'Wireless Headphones',
+    currentStock: 45,
+    predictedDemand: 120,
+    recommendedRestock: 95,
+    urgency: 'medium',
+  },
+  {
+    productId: 'prod-009',
+    productName: 'Running Shoes',
+    currentStock: 35,
+    predictedDemand: 88,
+    recommendedRestock: 63,
+    urgency: 'high',
+  },
+  {
+    productId: 'prod-005',
+    productName: 'Notebook Set',
+    currentStock: 85,
+    predictedDemand: 110,
+    recommendedRestock: 35,
+    urgency: 'low',
+  },
+];
