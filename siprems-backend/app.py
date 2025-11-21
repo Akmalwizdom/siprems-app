@@ -150,8 +150,7 @@ def create_app(config: Optional[object] = None) -> Flask:
                 session.execute(text("SELECT 1"))
 
             # Check Redis connectivity
-            cache_service = app.cache_service
-            redis_available = cache_service.is_available()
+            redis_available = app.cache_service.is_available()
 
             # Check chat service connectivity
             chat_available = app.chat_service.is_available()
