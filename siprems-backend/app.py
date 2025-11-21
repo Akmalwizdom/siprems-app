@@ -25,6 +25,7 @@ from routes import (
     chat_bp,
     system_bp,
     task_bp,
+    settings_bp,
 )
 
 def create_app(config: Optional[object] = None) -> Flask:
