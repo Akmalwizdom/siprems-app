@@ -1,5 +1,5 @@
 import { apiClient } from './api';
-import { TimeRange, DashboardMetrics, SalesDataPoint, CategorySale, CriticalStockItem, DashboardResponse } from '../types';
+import { TimeRange, DashboardMetrics, SalesDataPoint, CategorySale, CriticalStockItem, DashboardResponse, Product } from '../types';
 
 const CATEGORY_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -115,3 +115,76 @@ export async function getCriticalStockItems(): Promise<CriticalStockItem[]> {
 
   return criticalItems;
 }
+
+export const mockProducts: Product[] = [
+  {
+    id: 'prod-001',
+    name: 'Wireless Headphones',
+    category: 'Electronics',
+    sellingPrice: 79.99,
+    stock: 45,
+  },
+  {
+    id: 'prod-002',
+    name: 'USB-C Cable',
+    category: 'Electronics',
+    sellingPrice: 12.99,
+    stock: 150,
+  },
+  {
+    id: 'prod-003',
+    name: 'Desk Lamp',
+    category: 'Home & Kitchen',
+    sellingPrice: 34.99,
+    stock: 28,
+  },
+  {
+    id: 'prod-004',
+    name: 'Coffee Mug',
+    category: 'Home & Kitchen',
+    sellingPrice: 9.99,
+    stock: 200,
+  },
+  {
+    id: 'prod-005',
+    name: 'Notebook Set',
+    category: 'Stationery',
+    sellingPrice: 15.99,
+    stock: 85,
+  },
+  {
+    id: 'prod-006',
+    name: 'Ballpoint Pen',
+    category: 'Stationery',
+    sellingPrice: 2.99,
+    stock: 500,
+  },
+  {
+    id: 'prod-007',
+    name: 'Yoga Mat',
+    category: 'Sports',
+    sellingPrice: 29.99,
+    stock: 40,
+  },
+  {
+    id: 'prod-008',
+    name: 'Water Bottle',
+    category: 'Sports',
+    sellingPrice: 24.99,
+    stock: 60,
+  },
+  {
+    id: 'prod-009',
+    name: 'Running Shoes',
+    category: 'Fashion',
+    sellingPrice: 89.99,
+    stock: 35,
+  },
+  {
+    id: 'prod-010',
+    name: 'Cotton T-Shirt',
+    category: 'Fashion',
+    sellingPrice: 19.99,
+    stock: 120,
+  },
+];

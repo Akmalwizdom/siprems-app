@@ -39,3 +39,23 @@ export interface DashboardResponse {
     optimal: number;
   }>;
 }
+
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  sellingPrice: number;
+  stock: number;
+}
+
+export interface CartItem {
+  product: Product;
+  quantity: number;
+}
+
+export interface Checkout {
+  items: CartItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+}
