@@ -1,4 +1,4 @@
-from models.event_model import EventModel  # Pastikan import ini benar
+from models.event_model import EventModel
 
 class EventService:
     """Business logic layer for event operations"""
@@ -6,7 +6,7 @@ class EventService:
     @staticmethod
     def get_all_events():
         """Get all events"""
-        # Data dari Model sudah berupa dict dengan format string, tidak perlu diformat ulang
+        # Data dari Model sudah berupa dict dengan format yang benar
         return EventModel.get_all_events()
     
     @staticmethod
@@ -15,7 +15,7 @@ class EventService:
         event = EventModel.get_event_by_id(event_id)
         if not event:
             raise ValueError(f"Event {event_id} not found")
-        return event  # Langsung return, tidak perlu _format_event
+        return event
     
     @staticmethod
     def create_event(data):
@@ -34,7 +34,7 @@ class EventService:
             include_in_prediction=data.get('includeInPrediction', True)
         )
         
-        return event # Langsung return
+        return event
     
     @staticmethod
     def delete_event(event_id):
@@ -57,23 +57,19 @@ class EventService:
         
         formatted = []
         for h in holidays:
-            # Handle typing secara aman
+            # Data dari model sudah string, pastikan aman
             ds_val = h['ds']
-            formatted_ds = ds_val
-            
-            # Cek jika ds_val adalah objek datetime/date, baru format. Jika string, biarkan.
             if hasattr(ds_val, 'isoformat'):
-                formatted_ds = ds_val.isoformat()
+                ds_str = ds_val.isoformat()
             else:
-                formatted_ds = str(ds_val)
+                ds_str = str(ds_val)
 
             formatted.append({
                 'holiday': h['holiday'],
-                'ds': formatted_ds,
+                'ds': ds_str,
                 'lower_window': -2,
                 'upper_window': 1
             })
         
         return formatted if formatted else None
 
-   
