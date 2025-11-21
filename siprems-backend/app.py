@@ -189,7 +189,7 @@ def create_app(config: Optional[object] = None) -> Flask:
         Returns:
             JSON response with Redis cache statistics.
         """
-        return jsonify(cache_service.get_stats()), 200
+        return jsonify(app.cache_service.get_stats()), 200
 
     @app.errorhandler(429)
     def ratelimit_handler(e) -> tuple:
