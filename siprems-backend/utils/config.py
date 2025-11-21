@@ -77,7 +77,8 @@ class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
     SESSION_COOKIE_SECURE = False
-    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
+    # Use secure random key in dev if not provided
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY') or 'dev-secret-key-use-environment-variable-in-production'
 
 class ProductionConfig(Config):
     """Production configuration"""
