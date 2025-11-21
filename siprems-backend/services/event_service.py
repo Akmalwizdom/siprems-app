@@ -44,15 +44,18 @@ class EventService:
     
     @staticmethod
     def delete_event(event_id):
-        """Delete a custom event"""
+        """Delete an event"""
         event = EventModel.get_event_by_id(event_id)
         if not event:
             raise ValueError(f"Event {event_id} not found")
-        
-        if event['type'] != 'custom':
+
+        if event['type'] == 'holiday':
             raise ValueError("Cannot delete holiday events")
-        
-        return EventModel.delete_event(event_id)
+
+        result = EventModel.delete_event(event_id)
+        if not result:
+            raise ValueError("Cannot delete holiday events")
+        return result
     
     @staticmethod
     def get_holidays_for_prediction():
