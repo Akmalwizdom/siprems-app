@@ -51,7 +51,7 @@ export default function LoginPage() {
     try {
       if (isRegister) {
         if (!fullName.trim()) {
-          setError('email', { type: 'manual', message: 'Full name is required' });
+          showToast.error('Full name is required');
           setIsLoading(false);
           return;
         }

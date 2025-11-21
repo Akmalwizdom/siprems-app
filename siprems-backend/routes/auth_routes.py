@@ -1,10 +1,13 @@
 from flask import Blueprint, request, jsonify
+import logging
 from services.user_service import UserService
 from utils.validators import (
     AuthLoginSchema, AuthRegisterSchema, RefreshTokenSchema,
     validate_request_data
 )
 from utils.jwt_handler import require_auth, optional_auth
+
+logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -49,8 +52,8 @@ def register():
     except ValueError as e:
         return jsonify({'message': str(e)}), 400
     except Exception as e:
-        print(f"Error Register: {str(e)}") 
-        return jsonify({'message': f'Registration failed: {str(e)}'}), 500
+        logger.error(f"Registration error: {str(e)}", exc_info=True)
+        return jsonify({'message': 'Registration failed. Please try again later.'}), 500
 
 
 @auth_bp.route('/login', methods=['POST'])

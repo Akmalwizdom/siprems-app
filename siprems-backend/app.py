@@ -8,6 +8,7 @@ from flask_talisman import Talisman
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_compress import Compress
+from sqlalchemy import text
 
 from utils.config import get_config
 from utils.cache_service import init_cache
@@ -146,11 +147,10 @@ def create_app(config: Optional[object] = None) -> Flask:
         try:
             # Check database connectivity
             with app.get_db_session() as session:
-                session.execute("SELECT 1")
+                session.execute(text("SELECT 1"))
 
             # Check Redis connectivity
-            cache_service = app.cache_service
-            redis_available = cache_service.is_available()
+            redis_available = app.cache_service.is_available()
 
             # Check chat service connectivity
             chat_available = app.chat_service.is_available()
@@ -188,7 +188,7 @@ def create_app(config: Optional[object] = None) -> Flask:
         Returns:
             JSON response with Redis cache statistics.
         """
-        return jsonify(cache_service.get_stats()), 200
+        return jsonify(app.cache_service.get_stats()), 200
 
     @app.errorhandler(429)
     def ratelimit_handler(e) -> tuple:

@@ -19,7 +19,7 @@ class Config:
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
     # JWT Configuration
-    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', None)
     JWT_ALGORITHM = 'HS256'
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRE_MINUTES', '30'))
     JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv('JWT_REFRESH_TOKEN_EXPIRE_DAYS', '7'))
@@ -77,7 +77,8 @@ class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
     SESSION_COOKIE_SECURE = False
-    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
+    # Use secure random key in dev if not provided
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY') or 'dev-secret-key-use-environment-variable-in-production'
 
 class ProductionConfig(Config):
     """Production configuration"""

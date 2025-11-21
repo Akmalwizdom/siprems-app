@@ -5,81 +5,76 @@ from prophet.serialize import model_to_json, model_from_json
 import os
 import json
 import logging
-import psycopg2
-import psycopg2.extras
+from sqlalchemy import text
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from utils.config import get_config
 
-os.makedirs(os.environ.get('MODELS_DIR', '/app/models/trained'), exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.join(BASE_DIR, "models")
-META_DIR = os.path.join(MODELS_DIR, "meta")
+# Use config for model directories
+config = get_config()
+MODELS_DIR = config.MODELS_DIR
+META_DIR = config.MODELS_META_DIR
 
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(META_DIR, exist_ok=True)
 
-def db_query_wrapper(conn_func):
-    """Wrapper for database queries with connection pooling"""
-    def execute(query, params=None, fetch_all=True):
-        conn = conn_func()
-        try:
-            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            if params:
-                cur.execute(query, params)
-            else:
-                cur.execute(query)
-            if fetch_all:
-                return cur.fetchall()
-            return cur.fetchone()
-        finally:
-            cur.close()
-            conn.close()
-    return execute
-
 class MLEngine:
-    def __init__(self, db_connection_func):
-        self.get_db_connection = db_query_wrapper(db_connection_func)
+    def __init__(self, db_engine_func):
+        self.get_db_engine = db_engine_func
 
     def get_sales_data(self, product_sku):
         """
         Fetch sales data with promo status, aggregated by day.
         Returns DataFrame with ds (date), y (quantity), and promo (status) columns.
         """
-        query = """
+        query = text("""
             SELECT
                 DATE(t.transaction_date) as ds,
                 SUM(t.quantity_sold) as y,
                 MAX(CASE WHEN t.is_promo THEN 1 ELSE 0 END) as promo
             FROM transactions t
             JOIN products p ON t.product_id = p.product_id
-            WHERE p.sku = %s
+            WHERE p.sku = :sku
             GROUP BY DATE(t.transaction_date)
-            ORDER BY ds ASC;
-        """
+            ORDER BY ds ASC
+        """)
         try:
-            result = self.get_db_connection(query, (product_sku,), fetch_all=True)
-            df = pd.DataFrame(result) if result else pd.DataFrame()
+            engine = self.get_db_engine()
+            with engine.connect() as conn:
+                result = conn.execute(query, {"sku": product_sku}).fetchall()
+                df = pd.DataFrame(result) if result else pd.DataFrame()
 
-            if not df.empty:
-                df['ds'] = pd.to_datetime(df['ds'])
-                df['y'] = pd.to_numeric(df['y'], errors='coerce').fillna(0).astype(int)
-                df['promo'] = pd.to_numeric(df['promo'], errors='coerce').fillna(0).astype(int)
+                if not df.empty:
+                    df['ds'] = pd.to_datetime(df['ds'])
+                    df['y'] = pd.to_numeric(df['y'], errors='coerce').fillna(0).astype(int)
+                    df['promo'] = pd.to_numeric(df['promo'], errors='coerce').fillna(0).astype(int)
 
-            return df
+                return df
         except Exception as e:
             logging.error(f"Error fetching sales data for {product_sku}: {e}")
             return pd.DataFrame()
 
     def get_holidays(self):
-        """Mengambil data hari libur."""
-        query = "SELECT event_name as holiday, event_date as ds FROM events WHERE include_in_prediction = TRUE;"
-        df = pd.DataFrame(self.get_db_connection(query, fetch_all=True))
-        if not df.empty:
-            df['ds'] = pd.to_datetime(df['ds'])
-            df['lower_window'] = -2
-            df['upper_window'] = 1
-        return df if not df.empty else None
+        """Fetch holiday data from events table."""
+        query = text("""
+            SELECT event_name as holiday, event_date as ds
+            FROM events
+            WHERE include_in_prediction = TRUE
+        """)
+        try:
+            engine = self.get_db_engine()
+            with engine.connect() as conn:
+                result = conn.execute(query).fetchall()
+                df = pd.DataFrame(result) if result else pd.DataFrame()
+                if not df.empty:
+                    df['ds'] = pd.to_datetime(df['ds'])
+                    df['lower_window'] = -2
+                    df['upper_window'] = 1
+                return df if not df.empty else None
+        except Exception as e:
+            logging.error(f"Error fetching holidays: {e}")
+            return None
 
     def train_product_model(self, product_sku):
         """
@@ -146,17 +141,27 @@ class MLEngine:
             accuracy_score = max(0, 100 * (1 - min(mape, 1.0)))  # Cap MAPE at 100%
 
             # 7. Save model
-            with open(os.path.join(MODELS_DIR, f"model_{product_sku}.json"), "w") as f:
-                f.write(model_to_json(model))
+            try:
+                model_file = os.path.join(MODELS_DIR, f"model_{product_sku}.json")
+                with open(model_file, "w") as f:
+                    f.write(model_to_json(model))
+            except Exception as e:
+                logging.error(f"Error saving model for {product_sku}: {e}")
+                raise
 
             # 8. Save metadata
-            with open(os.path.join(META_DIR, f"meta_{product_sku}.json"), "w") as f:
-                json.dump({
-                    "correction_factor": correction_factor,
-                    "mae": float(mae),
-                    "mape_percent": float(mape * 100),
-                    "accuracy_score": float(accuracy_score)
-                }, f, indent=2)
+            try:
+                meta_file = os.path.join(META_DIR, f"meta_{product_sku}.json")
+                with open(meta_file, "w") as f:
+                    json.dump({
+                        "correction_factor": correction_factor,
+                        "mae": float(mae),
+                        "mape_percent": float(mape * 100),
+                        "accuracy_score": float(accuracy_score)
+                    }, f, indent=2)
+            except Exception as e:
+                logging.error(f"Error saving metadata for {product_sku}: {e}")
+                raise
 
             logging.info(f"Model trained for {product_sku}: accuracy={accuracy_score:.1f}%, correction_factor={correction_factor:.3f}")
 
@@ -172,20 +177,40 @@ class MLEngine:
 
     def predict(self, product_sku, days=7):
         """
-        Prediksi dengan handling Promo Masa Depan & Correction Factor
-        """
-        model_path = os.path.join(MODELS_DIR, f"model_{product_sku}.json")
-        meta_path = os.path.join(META_DIR, f"meta_{product_sku}.json")
+        Predict stock levels with future promo handling and correction factor.
 
-        # Train model if it doesn't exist
-        if not os.path.exists(model_path):
-            res = self.train_product_model(product_sku)
-            if res['status'] != 'success':
-                raise Exception(f"Insufficient data to train model for product {product_sku}. Need at least 5 days of sales history.")
+        Args:
+            product_sku: Product SKU identifier
+            days: Number of days to forecast (default 7)
+
+        Returns:
+            DataFrame with predictions (yhat_corrected), confidence intervals, and metadata
+
+        Raises:
+            Exception: If model cannot be trained or product lacks historical data
+        """
+        try:
+            model_path = os.path.join(MODELS_DIR, f"model_{product_sku}.json")
+            meta_path = os.path.join(META_DIR, f"meta_{product_sku}.json")
+
+            # Train model if it doesn't exist
+            if not os.path.exists(model_path):
+                res = self.train_product_model(product_sku)
+                if res['status'] != 'success':
+                    raise Exception(f"Insufficient data to train model for product {product_sku}. Need at least 5 days of sales history.")
+        except Exception as e:
+            logging.error(f"Error in predict setup for {product_sku}: {e}")
+            raise
 
         # Load Model
-        with open(model_path, 'r') as f:
-            model = model_from_json(f.read())
+        try:
+            with open(model_path, 'r') as f:
+                model = model_from_json(f.read())
+        except FileNotFoundError:
+            raise Exception(f"Model file not found for product {product_sku}")
+        except Exception as e:
+            logging.error(f"Error loading model for {product_sku}: {e}")
+            raise
 
         # Load Correction Factor & Accuracy (defaults if not found)
         correction_factor = 1.0
@@ -199,6 +224,8 @@ class MLEngine:
                     accuracy_score = float(meta.get('accuracy_score', 0.0))
             except Exception as e:
                 logging.warning(f"Could not load metadata for {product_sku}: {e}. Using defaults.")
+        else:
+            logging.warning(f"Metadata file not found for {product_sku}. Using default correction factor.")
 
         # Create future dataframe
         future = model.make_future_dataframe(periods=days)

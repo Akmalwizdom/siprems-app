@@ -20,7 +20,6 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    # last_login = Column(DateTime, nullable=True) # Opsional: aktifkan jika skema DB mendukung
 
     def __repr__(self) -> str:
         return f"<User(user_id={self.user_id}, email='{self.email}')>"
@@ -87,7 +86,6 @@ class User(Base):
             user = session.query(User).filter(User.user_id == user_id).first()
             if user:
                 user.updated_at = datetime.utcnow()
-                # user.last_login = datetime.utcnow() # Uncomment jika kolom ada di DB
                 session.commit()
 
     @staticmethod
