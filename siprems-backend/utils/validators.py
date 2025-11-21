@@ -104,7 +104,7 @@ class EventSchema(Schema):
     )
     includeInPrediction = fields.Bool(
         required=False,
-        missing=True
+        load_default=True
     )
 
 
