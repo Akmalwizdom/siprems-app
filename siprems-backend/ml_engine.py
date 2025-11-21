@@ -193,8 +193,14 @@ class MLEngine:
             raise
 
         # Load Model
-        with open(model_path, 'r') as f:
-            model = model_from_json(f.read())
+        try:
+            with open(model_path, 'r') as f:
+                model = model_from_json(f.read())
+        except FileNotFoundError:
+            raise Exception(f"Model file not found for product {product_sku}")
+        except Exception as e:
+            logging.error(f"Error loading model for {product_sku}: {e}")
+            raise
 
         # Load Correction Factor & Accuracy (defaults if not found)
         correction_factor = 1.0
@@ -208,6 +214,8 @@ class MLEngine:
                     accuracy_score = float(meta.get('accuracy_score', 0.0))
             except Exception as e:
                 logging.warning(f"Could not load metadata for {product_sku}: {e}. Using defaults.")
+        else:
+            logging.warning(f"Metadata file not found for {product_sku}. Using default correction factor.")
 
         # Create future dataframe
         future = model.make_future_dataframe(periods=days)
