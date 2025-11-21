@@ -1,13 +1,8 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { TrendingUp, Package, ShoppingBag, AlertCircle, Activity, BarChart3 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { TrendingUp, ShoppingBag, Package, AlertCircle } from 'lucide-react';
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
+  AreaChart,
+  Area,
   PieChart,
   Pie,
   Cell,
@@ -15,91 +10,46 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
+  Legend,
 } from 'recharts';
-import { Skeleton } from './ui/skeleton';
-import { CardSkeleton } from './skeletons/CardSkeleton';
+import { getDashboardMetrics, getSalesData, getCategorySales, getCriticalStockItems } from '../utils/mockData';
+import { TimeRange, DashboardMetrics, SalesDataPoint, CategorySale, CriticalStockItem } from '../types';
 
-interface CardStats {
-  daily_transactions: number;
-  active_products: number;
-  low_stock_items: number;
-}
+const timeRanges: { value: TimeRange; label: string }[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'This Week' },
+  { value: 'month', label: 'This Month' },
+  { value: 'year', label: 'This Year' },
+];
 
-interface SalesTrendData {
-  date: string;
-  sales: number;
-}
-
-interface StockCompData {
-  product: string;
-  current: number;
-  optimal: number;
-}
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5 },
-  },
-};
-
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
-
-const API_URL = 'http://localhost:5000';
+const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export default function Dashboard() {
-  const [predictionPeriod, setPredictionPeriod] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
-  const [cardStats, setCardStats] = useState<CardStats | null>(null);
-  const [salesTrend, setSalesTrend] = useState<SalesTrendData[]>([]);
-  const [stockComparison, setStockComparison] = useState<StockCompData[]>([]);
+  const [selectedRange, setSelectedRange] = useState<TimeRange>('month');
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [salesData, setSalesData] = useState<SalesDataPoint[]>([]);
+  const [categorySales, setCategorySales] = useState<CategorySale[]>([]);
+  const [criticalStockItems, setCriticalStockItems] = useState<CriticalStockItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
+    const loadDashboardData = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${API_URL}/dashboard-stats`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch dashboard data');
-        }
-        const data = await response.json();
+        const [metricsData, salesTrendData, categoriesData, criticalItems] = await Promise.all([
+          getDashboardMetrics(selectedRange),
+          getSalesData(selectedRange),
+          getCategorySales(),
+          getCriticalStockItems(),
+        ]);
 
-        const parsedCards: CardStats = {
-          daily_transactions: parseInt(String(data.cards.daily_transactions), 10),
-          active_products: parseInt(String(data.cards.active_products), 10),
-          low_stock_items: parseInt(String(data.cards.low_stock_items), 10),
-        };
-
-        const parsedSalesTrend: SalesTrendData[] = data.salesTrend.map((d: any) => ({
-          ...d,
-          sales: parseInt(String(d.sales), 10),
-        }));
-
-        const parsedStockComp: StockCompData[] = data.stockComparison.map((d: any) => ({
-          ...d,
-          current: parseInt(String(d.current), 10),
-          optimal: parseInt(String(d.optimal), 10),
-        }));
-
-        setCardStats(parsedCards);
-        setSalesTrend(parsedSalesTrend);
-        setStockComparison(parsedStockComp);
+        setMetrics(metricsData);
+        setSalesData(salesTrendData);
+        setCategorySales(categoriesData);
+        setCriticalStockItems(criticalItems);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An unknown error occurred');
         console.error(err);
@@ -108,299 +58,221 @@ export default function Dashboard() {
       }
     };
 
-    fetchDashboardData();
-  }, []);
+    loadDashboardData();
+  }, [selectedRange]);
 
-  const predictionData = {
-    weekly: { value: '+18%', label: 'Expected increase', subtext: 'Next 7 days' },
-    monthly: { value: '+24%', label: 'Expected increase', subtext: 'Next 30 days' },
-    yearly: { value: '+42%', label: 'Expected increase', subtext: 'Next 365 days' },
-  };
+  if (isLoading && !metrics) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-slate-200 h-10 rounded-lg w-1/3 animate-pulse"></div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-white rounded-xl p-6 border border-slate-200 animate-pulse">
+              <div className="h-20 bg-slate-200 rounded"></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
-  const calculateTotalRevenue = () => {
-    return stockComparison.reduce((sum, item) => sum + item.current * 100, 0);
-  };
-
-  const pieData = stockComparison.slice(0, 5).map((item) => ({
-    name: item.product,
-    value: item.current,
-  }));
+  if (!metrics) {
+    return <div className="text-red-600">Failed to load dashboard data</div>;
+  }
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="space-y-6"
-    >
-      <motion.div variants={itemVariants}>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Dashboard Overview</h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Track your business performance and stock predictions in real-time
-        </p>
-      </motion.div>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 mb-1">Dashboard</h1>
+          <p className="text-slate-500">Welcome back! Here's your business overview</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {timeRanges.map((range) => (
+            <button
+              key={range.value}
+              onClick={() => setSelectedRange(range.value)}
+              className={`px-4 py-2 rounded-lg transition-colors text-sm ${
+                selectedRange === range.value
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {range.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {isLoading ? (
-          <>
-            <CardSkeleton />
-            <CardSkeleton />
-            <CardSkeleton />
-            <CardSkeleton />
-          </>
-        ) : (
-          <>
-            <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Daily Transactions</CardTitle>
-                <ShoppingBag className="w-5 h-5 text-blue-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {cardStats?.daily_transactions}
-                </div>
-                <p className="text-xs text-green-600 dark:text-green-400 mt-1">+12% from yesterday</p>
-              </CardContent>
-            </Card>
+      {/* Metrics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white rounded-xl p-6 border border-slate-200 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-white" />
+            </div>
+            <span className="text-green-600 bg-green-50 px-3 py-1 rounded-full text-sm font-medium">
+              +{metrics.revenueChange}%
+            </span>
+          </div>
+          <h3 className="text-slate-500 text-sm font-medium mb-1">Total Revenue</h3>
+          <p className="text-2xl font-bold text-slate-900">${metrics.totalRevenue.toLocaleString()}</p>
+          <p className="text-xs text-slate-400 mt-2">vs last period</p>
+        </div>
 
-            <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Active Products</CardTitle>
-                <Package className="w-5 h-5 text-emerald-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {cardStats?.active_products}
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">In stock inventory</p>
-              </CardContent>
-            </Card>
+        <div className="bg-white rounded-xl p-6 border border-slate-200 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg">
+              <ShoppingBag className="w-6 h-6 text-white" />
+            </div>
+            <span className="text-green-600 bg-green-50 px-3 py-1 rounded-full text-sm font-medium">
+              +{metrics.transactionsChange}%
+            </span>
+          </div>
+          <h3 className="text-slate-500 text-sm font-medium mb-1">Total Transactions</h3>
+          <p className="text-2xl font-bold text-slate-900">{metrics.totalTransactions.toLocaleString()}</p>
+          <p className="text-xs text-slate-400 mt-2">vs last period</p>
+        </div>
 
-            <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Low Stock Items</CardTitle>
-                <AlertCircle className="w-5 h-5 text-red-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {cardStats?.low_stock_items}
-                </div>
-                <p className="text-xs text-red-500 dark:text-red-400 mt-1">Need restocking soon</p>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm text-gray-600 dark:text-gray-400">Prediction</CardTitle>
-                <Select value={predictionPeriod} onValueChange={(value: any) => setPredictionPeriod(value)}>
-                  <SelectTrigger className="w-[100px] h-8 rounded-lg bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-baseline space-x-2">
-                  <div className="text-3xl font-bold text-gray-900 dark:text-white">
-                    {predictionData[predictionPeriod].value}
-                  </div>
-                  <TrendingUp className="w-5 h-5 text-green-500" />
-                </div>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                  {predictionData[predictionPeriod].subtext}
-                </p>
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </motion.div>
+        <div className="bg-white rounded-xl p-6 border border-slate-200 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg">
+              <Package className="w-6 h-6 text-white" />
+            </div>
+            <span className="text-green-600 bg-green-50 px-3 py-1 rounded-full text-sm font-medium">
+              +{metrics.itemsChange}%
+            </span>
+          </div>
+          <h3 className="text-slate-500 text-sm font-medium mb-1">Items Sold</h3>
+          <p className="text-2xl font-bold text-slate-900">{metrics.totalItemsSold.toLocaleString()}</p>
+          <p className="text-xs text-slate-400 mt-2">vs last period</p>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <motion.div variants={itemVariants} className="lg:col-span-2">
-          <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-gray-900 dark:text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                Sales Trends
-              </CardTitle>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Last 7 days performance</p>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex justify-center items-center h-[300px]">
-                  <Skeleton className="h-full w-full rounded" />
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={salesTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" className="dark:stroke-gray-700" />
-                    <XAxis dataKey="date" stroke="#888" />
-                    <YAxis stroke="#888" />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#1f2937',
-                        border: '1px solid #4b5563',
-                        borderRadius: '8px',
-                      }}
-                      labelStyle={{ color: '#fff' }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="sales"
-                      stroke="#3B82F6"
-                      strokeWidth={3}
-                      dot={{ fill: '#3B82F6', r: 5 }}
-                      activeDot={{ r: 7 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
+        {/* Sales Performance Chart */}
+        <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-slate-200 hover:shadow-md transition-shadow">
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-slate-900 mb-1">Sales Performance</h2>
+            <p className="text-sm text-slate-500">Track your revenue trends</p>
+          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={salesData}>
+              <defs>
+                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="date" stroke="#64748b" style={{ fontSize: '0.875rem' }} />
+              <YAxis stroke="#64748b" style={{ fontSize: '0.875rem' }} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#fff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                }}
+              />
+              <Area
+                type="monotone"
+                dataKey="sales"
+                stroke="#4f46e5"
+                strokeWidth={2}
+                fillOpacity={1}
+                fill="url(#colorSales)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
 
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-gray-900 dark:text-white flex items-center gap-2">
-                <Activity className="w-5 h-5" />
-                Stock Distribution
-              </CardTitle>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Top 5 products</p>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex justify-center items-center h-[250px]">
-                  <Skeleton className="h-full w-full rounded" />
+        {/* Top Selling Categories */}
+        <div className="bg-white rounded-xl p-6 border border-slate-200 hover:shadow-md transition-shadow">
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-slate-900 mb-1">Top Categories</h2>
+            <p className="text-sm text-slate-500">Best performing</p>
+          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={categorySales}
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={90}
+                paddingAngle={2}
+                dataKey="value"
+              >
+                {categorySales.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#fff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="space-y-2 mt-4">
+            {categorySales.map((cat) => (
+              <div key={cat.category} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: cat.color }}
+                  ></div>
+                  <span className="text-sm text-slate-700">{cat.category}</span>
                 </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name}: ${value}`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#1f2937',
-                        border: '1px solid #4b5563',
-                        borderRadius: '8px',
-                      }}
-                      labelStyle={{ color: '#fff' }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-gray-900 dark:text-white flex items-center gap-2">
-                <BarChart3 className="w-5 h-5" />
-                Stock Comparison
-              </CardTitle>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Current vs Optimal levels</p>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex justify-center items-center h-[300px]">
-                  <Skeleton className="h-full w-full rounded" />
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={stockComparison}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" className="dark:stroke-gray-700" />
-                    <XAxis dataKey="product" stroke="#888" />
-                    <YAxis stroke="#888" />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#1f2937',
-                        border: '1px solid #4b5563',
-                        borderRadius: '8px',
-                      }}
-                      labelStyle={{ color: '#fff' }}
-                    />
-                    <Legend />
-                    <Bar dataKey="current" fill="#3B82F6" radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="optimal" fill="#93C5FD" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-2xl border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 shadow-sm">
-            <CardHeader>
-              <div className="flex items-start space-x-3">
-                <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-1 flex-shrink-0" />
-                <div className="flex-1">
-                  <CardTitle className="text-blue-900 dark:text-blue-300">Key Insights</CardTitle>
-                  <div className="text-sm text-blue-700 dark:text-blue-400 mt-4 space-y-3">
-                    <div className="flex items-start space-x-2">
-                      <span className="text-lg font-semibold">•</span>
-                      <span>
-                        <strong>Stock Status:</strong> {cardStats?.low_stock_items} items need restocking
-                      </span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                      <span className="text-lg font-semibold">•</span>
-                      <span>
-                        <strong>Daily Performance:</strong> {cardStats?.daily_transactions} transactions today
-                      </span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                      <span className="text-lg font-semibold">•</span>
-                      <span>
-                        <strong>Prediction:</strong> Expected {predictionData[predictionPeriod].value} growth{' '}
-                        {predictionData[predictionPeriod].subtext.toLowerCase()}
-                      </span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                      <span className="text-lg font-semibold">•</span>
-                      <span>
-                        <strong>Inventory Value:</strong> ${calculateTotalRevenue().toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                <span className="text-sm font-medium text-slate-900">{cat.value}</span>
               </div>
-            </CardHeader>
-          </Card>
-        </motion.div>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* Critical Stock Alert */}
+      {criticalStockItems.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 hover:shadow-md transition-shadow">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-red-100 rounded-lg flex-shrink-0">
+              <AlertCircle className="w-6 h-6 text-red-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base font-semibold text-red-900 mb-2">Critical Stock Alert</h3>
+              <p className="text-sm text-red-700 mb-4">
+                {criticalStockItems.length} item(s) are running low on stock
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {criticalStockItems.map((item) => (
+                  <span
+                    key={item.id}
+                    className="px-3 py-1 bg-white text-red-700 text-sm rounded-full border border-red-200"
+                  >
+                    {item.name} ({item.stock} left)
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
-        <motion.div variants={itemVariants}>
-          <Card className="rounded-2xl border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
-            <CardContent className="pt-6">
-              <p className="text-red-700 dark:text-red-300">
-                <strong>Error:</strong> {error}
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
+          <div className="flex items-start gap-4">
+            <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-1" />
+            <div>
+              <h3 className="text-amber-900 font-semibold mb-1">Data Loading Error</h3>
+              <p className="text-sm text-amber-700">{error}</p>
+            </div>
+          </div>
+        </div>
       )}
-    </motion.div>
+    </div>
   );
 }
