@@ -1,392 +1,335 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { TrendingUp, Loader2, CheckCircle, AlertTriangle, ArrowUp, ArrowDown, Package, Calendar } from 'lucide-react';
-import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Area,
-  ComposedChart,
-} from 'recharts';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './ui/table';
-import { Badge } from './ui/badge';
-import { Alert, AlertDescription, AlertTitle } from './ui/alert';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Label } from './ui/label';
-import { toast } from 'sonner';
+import { useState } from 'react';
+import { Sparkles, Loader2, TrendingUp, AlertTriangle, MessageSquare, Send, ChevronRight, Calendar } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { predictionData, restockRecommendations } from '../utils/mockData';
 
-interface ChartData {
-  date: string;
-  actual: number | null;
-  predicted: number;
-  lower: number;
-  upper: number;
-}
-
-interface RecommendationData {
-  product: string;
-  current: number;
-  optimal: number;
-  trend: 'up' | 'down';
-  suggestion: string;
-  urgency: 'high' | 'medium' | 'low';
-}
-
-interface Product {
-  product_id: number;
-  name: string;
-  sku: string;
-}
-
-const API_URL = 'http://localhost:5000';
+type PredictionState = 'idle' | 'loading' | 'result' | 'learning';
 
 export default function PredictionPage() {
-  const [isRunning, setIsRunning] = useState(false);
-  const [showResults, setShowResults] = useState(false);
-  const [apiError, setApiError] = useState<string | null>(null);
+  const [state, setState] = useState<PredictionState>('idle');
+  const [showChatbot, setShowChatbot] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
+    {
+      role: 'assistant',
+      content: 'Sales spike predicted during Eid Al-Fitr (Week 6-7) and New Year (Week 11). Historical data shows 120% increase during these periods. Consider restocking high-demand items early.',
+    },
+  ]);
+  const [chatInput, setChatInput] = useState('');
 
-  const [predictionData, setPredictionData] = useState<ChartData[]>([]);
-  const [recommendations, setRecommendations] = useState<RecommendationData[]>([]);
-  const [modelAccuracy, setModelAccuracy] = useState<number | null>(null);
-
-  const [products, setProducts] = useState<Product[]>([]);
-  const [selectedSku, setSelectedSku] = useState<string>("");
-  
-  // [BARU] State untuk periode prediksi
-  const [forecastDays, setForecastDays] = useState<string>("30");
-
-  useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const response = await fetch(`${API_URL}/products`);
-        if (!response.ok) throw new Error('Failed to fetch products');
-        const data: Product[] = await response.json();
-        setProducts(data);
-        if (data.length > 0) {
-          setSelectedSku(data[0].sku);
-        }
-      } catch (err) {
-        console.error(err);
-        setApiError(err instanceof Error ? err.message : 'Failed to load products');
-      }
-    };
-    fetchProducts();
-  }, []);
-
-  const handleRunPrediction = async () => {
-    if (!selectedSku) {
-      toast.error("Please select a product first.");
-      return;
-    }
-
-    setIsRunning(true);
-    setShowResults(false);
-    setApiError(null);
-    setModelAccuracy(null);
-
-    try {
-      const response = await fetch(`${API_URL}/predict`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // [BARU] Kirim parameter days ke backend
-        body: JSON.stringify({ 
-          product_sku: selectedSku,
-          days: parseInt(forecastDays) 
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
-      }
-
-      const cleanChartData: ChartData[] = data.chartData.map((d: any) => ({
-        ...d,
-        actual: d.actual ? parseFloat(String(d.actual)) : null,
-        predicted: parseFloat(String(d.predicted)),
-        lower: parseFloat(String(d.lower)),
-        upper: parseFloat(String(d.upper)),
-      }));
-
-      const cleanRecData: RecommendationData[] = data.recommendations.map((r: any) => ({
-        ...r,
-        current: parseInt(String(r.current), 10),
-        optimal: parseInt(String(r.optimal), 10),
-      }));
-
-      setPredictionData(cleanChartData);
-      setRecommendations(cleanRecData);
-      
-      if (data.accuracy !== undefined) {
-        setModelAccuracy(data.accuracy);
-      }
-      
-      setShowResults(true);
-
-    } catch (error) {
-      console.error('Failed to run prediction:', error);
-      setApiError(error instanceof Error ? error.message : 'An unknown error occurred.');
-    } finally {
-      setIsRunning(false);
-    }
+  const handleStartPrediction = () => {
+    setState('loading');
+    setTimeout(() => {
+      setState('result');
+    }, 3000);
   };
 
+  const handleSendMessage = () => {
+    if (!chatInput.trim()) return;
+
+    setChatMessages([
+      ...chatMessages,
+      { role: 'user', content: chatInput },
+      {
+        role: 'assistant',
+        content: 'Based on your query, I recommend focusing on restocking Coffee Mugs and Desk Lamps as they show the highest predicted demand. Would you like specific quantity recommendations?',
+      },
+    ]);
+    setChatInput('');
+  };
+
+  const getUrgencyColor = (urgency: string) => {
+    return {
+      high: 'text-red-600 bg-red-50 border-red-200',
+      medium: 'text-yellow-600 bg-yellow-50 border-yellow-200',
+      low: 'text-green-600 bg-green-50 border-green-200',
+    }[urgency] || 'text-slate-600 bg-slate-50 border-slate-200';
+  };
+
+  if (state === 'idle') {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-20">
+        <div className="inline-flex w-24 h-24 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-3xl items-center justify-center mb-6">
+          <Sparkles className="w-12 h-12 text-white" />
+        </div>
+        <h1 className="text-slate-900 mb-4 text-3xl font-bold">Smart Stock Prediction</h1>
+        <p className="text-slate-600 mb-8 max-w-lg mx-auto">
+          Our AI analyzes your sales history, seasonal trends, and upcoming holidays to predict demand and recommend optimal stock levels.
+        </p>
+        <button
+          onClick={handleStartPrediction}
+          className="inline-flex items-center gap-3 bg-indigo-600 text-white px-8 py-4 rounded-xl hover:bg-indigo-700 transition-colors shadow-lg hover:shadow-xl"
+        >
+          <Sparkles className="w-5 h-5" />
+          Start Prediction
+        </button>
+        <div className="mt-12 grid grid-cols-3 gap-4 text-left">
+          <div className="bg-white rounded-xl p-6 border border-slate-200">
+            <TrendingUp className="w-8 h-8 text-indigo-600 mb-3" />
+            <h3 className="text-slate-900 mb-2 font-semibold">Trend Analysis</h3>
+            <p className="text-xs text-slate-600">Identify patterns in your sales data</p>
+          </div>
+          <div className="bg-white rounded-xl p-6 border border-slate-200">
+            <Calendar className="w-8 h-8 text-indigo-600 mb-3" />
+            <h3 className="text-slate-900 mb-2 font-semibold">Holiday Impact</h3>
+            <p className="text-xs text-slate-600">Predict spikes during special events</p>
+          </div>
+          <div className="bg-white rounded-xl p-6 border border-slate-200">
+            <AlertTriangle className="w-8 h-8 text-indigo-600 mb-3" />
+            <h3 className="text-slate-900 mb-2 font-semibold">Smart Alerts</h3>
+            <p className="text-xs text-slate-600">Get notified before stockouts</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === 'loading') {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-20">
+        <div className="inline-flex w-24 h-24 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-3xl items-center justify-center mb-6 animate-pulse">
+          <Loader2 className="w-12 h-12 text-white animate-spin" />
+        </div>
+        <h1 className="text-slate-900 mb-4 text-3xl font-bold">Analyzing Your Data...</h1>
+        <p className="text-slate-600 mb-8">
+          Our AI is processing your sales history and generating forecasts
+        </p>
+        <div className="max-w-md mx-auto">
+          <div className="bg-slate-200 rounded-full h-2 overflow-hidden">
+            <div className="bg-indigo-600 h-full rounded-full animate-[loading_2s_ease-in-out_infinite]"></div>
+          </div>
+          <div className="mt-4 space-y-2 text-left">
+            <div className="flex items-center gap-3 text-slate-600">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span>Loading sales data...</span>
+            </div>
+            <div className="flex items-center gap-3 text-slate-600">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span>Analyzing seasonal patterns...</span>
+            </div>
+            <div className="flex items-center gap-3 text-slate-600">
+              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
+              <span>Generating predictions...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === 'learning') {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-20">
+        <div className="inline-flex w-24 h-24 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-3xl items-center justify-center mb-6">
+          <AlertTriangle className="w-12 h-12 text-white" />
+        </div>
+        <h1 className="text-slate-900 mb-4 text-3xl font-bold">System is Learning</h1>
+        <p className="text-slate-600 mb-8 max-w-lg mx-auto">
+          We need at least 7 days of sales data to generate accurate predictions. Keep using the system and check back soon!
+        </p>
+        <div className="bg-white rounded-xl p-6 border border-slate-200 max-w-md mx-auto">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-slate-700">Data Collection Progress</span>
+            <span className="text-indigo-600">3/7 days</span>
+          </div>
+          <div className="bg-slate-200 rounded-full h-3 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 h-full rounded-full" style={{ width: '43%' }}></div>
+          </div>
+          <p className="text-xs text-slate-500 mt-3">4 more days until predictions are available</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="space-y-6"
-    >
-      <div>
-        <h1 className="text-gray-900 dark:text-white mb-2">Stock Prediction</h1>
-        <p className="text-gray-600 dark:text-gray-400">AI-powered inventory forecasting</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-slate-900 mb-1 text-3xl font-bold">AI Prediction Results</h1>
+          <p className="text-slate-500">12-week forecast generated on {new Date().toLocaleDateString()}</p>
+        </div>
+        <button
+          onClick={() => setState('idle')}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+        >
+          <Sparkles className="w-4 h-4" />
+          Run New Prediction
+        </button>
       </div>
 
-      <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-        <CardContent className="pt-6">
-          <div className="flex flex-col xl:flex-row items-center justify-center gap-8">
-            <div className="flex-shrink-0 bg-blue-50 dark:bg-blue-900/30 rounded-full w-20 h-20 flex items-center justify-center">
-              <TrendingUp className="w-10 h-10 text-blue-500" />
+      <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
+        <div className="lg:col-span-7 space-y-6">
+          <div className="bg-white rounded-xl p-6 border border-slate-200">
+            <div className="mb-6">
+              <h2 className="text-slate-900 mb-1 text-xl font-bold">Sales Forecast</h2>
+              <p className="text-slate-500">Historical data vs AI predictions with holiday markers</p>
             </div>
-            
-            <div className="flex-1 w-full space-y-4 text-center xl:text-left">
-              <div>
-                <h2 className="text-gray-900 dark:text-white font-semibold mb-1">Configuration</h2>
-                <p className="text-gray-600 dark:text-gray-400 text-sm">
-                  Configure your prediction parameters below.
-                </p>
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={predictionData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" stroke="#64748b" />
+                <YAxis stroke="#64748b" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                  }}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="historical"
+                  stroke="#64748b"
+                  strokeWidth={2}
+                  name="Historical Sales"
+                  dot={{ fill: '#64748b', r: 4 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="predicted"
+                  stroke="#4f46e5"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  name="AI Prediction"
+                  dot={{ fill: '#4f46e5', r: 4 }}
+                />
+                {predictionData
+                  .filter((d) => d.isHoliday)
+                  .map((holiday, idx) => (
+                    <ReferenceLine
+                      key={idx}
+                      x={holiday.date}
+                      stroke="#ef4444"
+                      strokeDasharray="3 3"
+                      label={{
+                        value: holiday.holidayName,
+                        position: 'top',
+                        fill: '#ef4444',
+                        fontSize: 12,
+                      }}
+                    />
+                  ))}
+              </LineChart>
+            </ResponsiveContainer>
+            <div className="mt-4 flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-slate-600 rounded-full"></div>
+                <span className="text-slate-600">Historical</span>
               </div>
-              
-              <div className="flex flex-col sm:flex-row items-center gap-4 justify-center xl:justify-start">
-                {/* Product Selector */}
-                <div className="space-y-2 w-full sm:w-64">
-                  <Label className="text-xs text-gray-500 uppercase font-bold">Product</Label>
-                  <Select value={selectedSku} onValueChange={setSelectedSku}>
-                    <SelectTrigger className="rounded-xl">
-                      <div className="flex items-center gap-2">
-                        <Package className="w-4 h-4 text-gray-500" />
-                        <SelectValue placeholder="Select product" />
-                      </div>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {products.map((p) => (
-                        <SelectItem key={p.sku} value={p.sku}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* [BARU] Time Period Selector */}
-                <div className="space-y-2 w-full sm:w-40">
-                  <Label className="text-xs text-gray-500 uppercase font-bold">Period</Label>
-                  <Select value={forecastDays} onValueChange={setForecastDays}>
-                    <SelectTrigger className="rounded-xl">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-500" />
-                        <SelectValue placeholder="Duration" />
-                      </div>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="7">7 Days (Short)</SelectItem>
-                      <SelectItem value="30">30 Days (Medium)</SelectItem>
-                      <SelectItem value="60">60 Days (Long)</SelectItem>
-                      <SelectItem value="90">90 Days (Quarter)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Run Button */}
-                <div className="space-y-2 w-full sm:w-auto sm:self-end">
-                   {/* Spacer label agar sejajar */}
-                   <Label className="text-xs opacity-0 hidden sm:block">Action</Label> 
-                   <Button
-                    size="default"
-                    onClick={handleRunPrediction}
-                    disabled={isRunning || !selectedSku}
-                    className="rounded-xl bg-blue-600 hover:bg-blue-700 w-full"
-                  >
-                    {isRunning ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <TrendingUp className="w-4 h-4 mr-2" />}
-                    {isRunning ? 'Analyzing...' : 'Run Prediction'}
-                  </Button>
-                </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-indigo-600 rounded-full"></div>
+                <span className="text-slate-600">Predicted</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-0.5 bg-red-500"></div>
+                <span className="text-slate-600">Holiday</span>
               </div>
             </div>
           </div>
 
-          {apiError && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-6">
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription>{apiError}</AlertDescription>
-              </Alert>
-            </motion.div>
-          )}
-        </CardContent>
-      </Card>
-
-      <AnimatePresence>
-        {showResults && (
-          <>
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-              <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-                <CardHeader>
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                      <CardTitle className="text-gray-900 dark:text-white">
-                        Forecast Results: <span className="text-blue-500">{recommendations[0]?.product}</span>
-                      </CardTitle>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Showing historical context & {forecastDays}-day future forecast
-                      </p>
+          <div className="bg-white rounded-xl p-6 border border-slate-200">
+            <div className="mb-6">
+              <h2 className="text-slate-900 mb-1 text-xl font-bold">Restock Recommendations</h2>
+              <p className="text-slate-500">Products predicted to spike in demand</p>
+            </div>
+            <div className="space-y-3">
+              {restockRecommendations.map((item) => (
+                <div
+                  key={item.productId}
+                  className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200"
+                >
+                  <div className="flex-1">
+                    <h3 className="text-slate-900 mb-1 font-semibold">{item.productName}</h3>
+                    <div className="flex items-center gap-4 text-sm text-slate-600">
+                      <span>Current: {item.currentStock}</span>
+                      <span>Predicted: {item.predictedDemand}</span>
+                      <span className="text-indigo-600">
+                        Restock: +{item.recommendedRestock}
+                      </span>
                     </div>
-                    
-                    {modelAccuracy !== null && (
-                      <div className="flex items-center bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 py-1.5">
-                        <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mr-2" />
-                        <div>
-                          <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider leading-none">
-                            Model Accuracy
-                          </p>
-                          <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300 leading-none mt-0.5">
-                            {modelAccuracy}%
-                          </p>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div style={{ width: '100%', height: '400px' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={predictionData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorConfidence" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#BFDBFE" stopOpacity={0.4}/>
-                            <stop offset="100%" stopColor="#BFDBFE" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                        <XAxis
-                          dataKey="date"
-                          stroke="#9CA3AF"
-                          fontSize={12}
-                          tickLine={false}
-                          axisLine={false}
-                          interval={parseInt(forecastDays) > 30 ? 'preserveStartEnd' : 0}
-                        />
-                        <YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                          labelStyle={{ color: '#374151', fontWeight: 'bold' }}
-                        />
-                        <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                  <span
+                    className={`px-3 py-1 rounded-full border text-xs font-semibold ${getUrgencyColor(item.urgency)}`}
+                  >
+                    {item.urgency.toUpperCase()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
 
-                        <Area
-                          type="monotone"
-                          dataKey="lower"
-                          fill="url(#colorConfidence)"
-                          stroke="none"
-                          isAnimationActive={true}
-                          name="Confidence Range"
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="upper"
-                          fill="url(#colorConfidence)"
-                          stroke="none"
-                          isAnimationActive={true}
-                          legendType="none"
-                          tooltipType="none"
-                        />
+        <div className="lg:col-span-3">
+          <div className="bg-white rounded-xl border border-slate-200 sticky top-24">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-slate-900 font-semibold">Smart Insights</h3>
+              </div>
+            </div>
 
-                        <Line
-                          type="monotone"
-                          dataKey="actual"
-                          stroke="#9CA3AF"
-                          strokeWidth={2}
-                          dot={parseInt(forecastDays) <= 30 ? { r: 3, fill: "#9CA3AF" } : false}
-                          name="Actual Sales"
-                          connectNulls
-                        />
+            <div className="p-4 max-h-96 overflow-y-auto space-y-4">
+              {chatMessages.map((message, idx) => (
+                <div
+                  key={idx}
+                  className={`${
+                    message.role === 'assistant'
+                      ? 'bg-indigo-50 text-slate-900'
+                      : 'bg-slate-100 text-slate-900 ml-8'
+                  } p-3 rounded-lg text-sm`}
+                >
+                  {message.role === 'assistant' && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles className="w-4 h-4 text-indigo-600" />
+                      <span className="text-xs text-indigo-600 font-semibold">AI Assistant</span>
+                    </div>
+                  )}
+                  <p>{message.content}</p>
+                </div>
+              ))}
+            </div>
 
-                        <Line
-                          type="monotone"
-                          dataKey="predicted"
-                          stroke="#2563EB"
-                          strokeWidth={3}
-                          dot={false}
-                          name="AI Forecast"
-                          animationDuration={1500}
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
-              <Card className="rounded-2xl border-gray-200 dark:border-gray-700 dark:bg-gray-800 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-gray-900 dark:text-white">Actionable Insights</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Current Stock</TableHead>
-                        <TableHead>Target Stock</TableHead>
-                        <TableHead>Trend</TableHead>
-                        <TableHead>Recommendation</TableHead>
-                        <TableHead>Urgency</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {recommendations.map((rec) => (
-                        <TableRow key={rec.product}>
-                          <TableCell className="font-medium">{rec.product}</TableCell>
-                          <TableCell>{rec.current}</TableCell>
-                          <TableCell>{rec.optimal}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              {rec.trend === 'up' ? <ArrowUp className="w-4 h-4 text-green-500" /> : <ArrowDown className="w-4 h-4 text-red-500" />}
-                              <span className="text-xs text-gray-500 capitalize">{rec.trend}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{rec.suggestion}</TableCell>
-                          <TableCell>
-                            <Badge variant={rec.urgency === 'high' ? 'destructive' : rec.urgency === 'medium' ? 'default' : 'secondary'}>
-                              {rec.urgency}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </motion.div>
+            <div className="p-4 border-t border-slate-200">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Ask about predictions..."
+                  className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  onClick={handleSendMessage}
+                  className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setChatInput('Why is there a spike in Week 6?');
+                    setTimeout(handleSendMessage, 100);
+                  }}
+                  className="text-xs px-3 py-1 bg-slate-100 text-slate-700 rounded-full hover:bg-slate-200 transition-colors flex items-center gap-1"
+                >
+                  Why the spike? <ChevronRight className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => {
+                    setChatInput('Show me top 3 priorities');
+                    setTimeout(handleSendMessage, 100);
+                  }}
+                  className="text-xs px-3 py-1 bg-slate-100 text-slate-700 rounded-full hover:bg-slate-200 transition-colors flex items-center gap-1"
+                >
+                  Top priorities <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
