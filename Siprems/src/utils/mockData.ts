@@ -1,5 +1,5 @@
 import { apiClient } from './api';
-import { TimeRange, DashboardMetrics, SalesDataPoint, CategorySale, CriticalStockItem, DashboardResponse } from '../types';
+import { TimeRange, DashboardMetrics, SalesDataPoint, CategorySale, CriticalStockItem, DashboardResponse, Product } from '../types';
 
 const CATEGORY_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
