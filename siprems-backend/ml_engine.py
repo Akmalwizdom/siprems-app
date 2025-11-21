@@ -141,17 +141,27 @@ class MLEngine:
             accuracy_score = max(0, 100 * (1 - min(mape, 1.0)))  # Cap MAPE at 100%
 
             # 7. Save model
-            with open(os.path.join(MODELS_DIR, f"model_{product_sku}.json"), "w") as f:
-                f.write(model_to_json(model))
+            try:
+                model_file = os.path.join(MODELS_DIR, f"model_{product_sku}.json")
+                with open(model_file, "w") as f:
+                    f.write(model_to_json(model))
+            except Exception as e:
+                logging.error(f"Error saving model for {product_sku}: {e}")
+                raise
 
             # 8. Save metadata
-            with open(os.path.join(META_DIR, f"meta_{product_sku}.json"), "w") as f:
-                json.dump({
-                    "correction_factor": correction_factor,
-                    "mae": float(mae),
-                    "mape_percent": float(mape * 100),
-                    "accuracy_score": float(accuracy_score)
-                }, f, indent=2)
+            try:
+                meta_file = os.path.join(META_DIR, f"meta_{product_sku}.json")
+                with open(meta_file, "w") as f:
+                    json.dump({
+                        "correction_factor": correction_factor,
+                        "mae": float(mae),
+                        "mape_percent": float(mape * 100),
+                        "accuracy_score": float(accuracy_score)
+                    }, f, indent=2)
+            except Exception as e:
+                logging.error(f"Error saving metadata for {product_sku}: {e}")
+                raise
 
             logging.info(f"Model trained for {product_sku}: accuracy={accuracy_score:.1f}%, correction_factor={correction_factor:.3f}")
 
