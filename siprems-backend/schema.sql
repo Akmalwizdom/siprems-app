@@ -55,6 +55,7 @@ CREATE TABLE events (
     type event_type NOT NULL,
     description TEXT,
     include_in_prediction BOOLEAN DEFAULT TRUE,
+    reated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
     UNIQUE(event_name, event_date)
 );

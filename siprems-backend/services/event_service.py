@@ -1,4 +1,4 @@
-from models.orm.event import Event as EventModel
+from models.event_model import EventModel  # Pastikan import ini benar
 
 class EventService:
     """Business logic layer for event operations"""
@@ -6,8 +6,8 @@ class EventService:
     @staticmethod
     def get_all_events():
         """Get all events"""
-        events = EventModel.get_all_events()
-        return EventService._format_events(events)
+        # Data dari Model sudah berupa dict dengan format string, tidak perlu diformat ulang
+        return EventModel.get_all_events()
     
     @staticmethod
     def get_event_by_id(event_id):
@@ -15,7 +15,7 @@ class EventService:
         event = EventModel.get_event_by_id(event_id)
         if not event:
             raise ValueError(f"Event {event_id} not found")
-        return EventService._format_event(event)
+        return event  # Langsung return, tidak perlu _format_event
     
     @staticmethod
     def create_event(data):
@@ -34,7 +34,7 @@ class EventService:
             include_in_prediction=data.get('includeInPrediction', True)
         )
         
-        return EventService._format_event(event)
+        return event # Langsung return
     
     @staticmethod
     def delete_event(event_id):
@@ -57,29 +57,23 @@ class EventService:
         
         formatted = []
         for h in holidays:
+            # Handle typing secara aman
+            ds_val = h['ds']
+            formatted_ds = ds_val
+            
+            # Cek jika ds_val adalah objek datetime/date, baru format. Jika string, biarkan.
+            if hasattr(ds_val, 'isoformat'):
+                formatted_ds = ds_val.isoformat()
+            else:
+                formatted_ds = str(ds_val)
+
             formatted.append({
                 'holiday': h['holiday'],
-                'ds': h['ds'].isoformat() if hasattr(h['ds'], 'isoformat') else str(h['ds']),
+                'ds': formatted_ds,
                 'lower_window': -2,
                 'upper_window': 1
             })
         
         return formatted if formatted else None
-    
-    @staticmethod
-    def _format_event(event):
-        """Format event for API response"""
-        if not event:
-            return None
-        
-        formatted = dict(event)
-        # Convert date to ISO format if present
-        if 'event_date' in formatted and formatted['event_date']:
-            formatted['event_date'] = formatted['event_date'].isoformat()
-        
-        return formatted
-    
-    @staticmethod
-    def _format_events(events):
-        """Format multiple events"""
-        return [EventService._format_event(e) for e in events]
+
+   

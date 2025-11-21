@@ -15,6 +15,11 @@ DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASS = os.getenv("DB_PASSWORD", "password")
 DB_PORT = os.getenv("DB_PORT", "5432")
 
+if DB_HOST == 'pgbouncer' and DB_PORT == '5432':
+    print(f"⚠️  PERINGATAN: Terdeteksi host '{DB_HOST}' dengan port '{DB_PORT}'.")
+    print("🔄  AUTO-FIX: Mengalihkan ke Port Internal PgBouncer (6432) agar koneksi sukses...")
+    DB_PORT = "6432"
+    
 # Mapping Produk: ID Dataset -> Atribut Database
 PRODUCT_MAPPING = {
     1: {"sku": "BRD-001", "name": "Roti Tawar (Bread)", "category": "Bread", "price": 4.00, "stock": 50},
