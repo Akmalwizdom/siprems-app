@@ -86,7 +86,6 @@ class User(Base):
             user = session.query(User).filter(User.user_id == user_id).first()
             if user:
                 user.updated_at = datetime.utcnow()
-                # user.last_login = datetime.utcnow() # Uncomment jika kolom ada di DB
                 session.commit()
 
     @staticmethod
