@@ -5,8 +5,7 @@ from prophet.serialize import model_to_json, model_from_json
 import os
 import json
 import logging
-import psycopg2
-import psycopg2.extras
+from sqlalchemy import text
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 
 os.makedirs(os.environ.get('MODELS_DIR', '/app/models/trained'), exist_ok=True)
@@ -19,27 +18,9 @@ META_DIR = os.path.join(MODELS_DIR, "meta")
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(META_DIR, exist_ok=True)
 
-def db_query_wrapper(conn_func):
-    """Wrapper for database queries with connection pooling"""
-    def execute(query, params=None, fetch_all=True):
-        conn = conn_func()
-        try:
-            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            if params:
-                cur.execute(query, params)
-            else:
-                cur.execute(query)
-            if fetch_all:
-                return cur.fetchall()
-            return cur.fetchone()
-        finally:
-            cur.close()
-            conn.close()
-    return execute
-
 class MLEngine:
-    def __init__(self, db_connection_func):
-        self.get_db_connection = db_query_wrapper(db_connection_func)
+    def __init__(self, db_engine_func):
+        self.get_db_engine = db_engine_func
 
     def get_sales_data(self, product_sku):
         """
