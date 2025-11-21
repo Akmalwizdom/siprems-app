@@ -21,19 +21,25 @@ class EventService:
     def create_event(data):
         """Create a new event with validation"""
         # Validation
-        required_fields = ['name', 'date']
+        required_fields = ['name', 'date', 'type']
         for field in required_fields:
             if field not in data:
                 raise ValueError(f"Missing required field: {field}")
-        
+
+        # Validate event type
+        valid_types = ['promotion', 'holiday', 'store-closed']
+        if data['type'] not in valid_types:
+            raise ValueError(f"Invalid event type: {data['type']}")
+
         # Create event
         event = EventModel.create_event(
             event_name=data['name'],
             event_date=data['date'],
             description=data.get('description'),
-            include_in_prediction=data.get('includeInPrediction', True)
+            include_in_prediction=data.get('includeInPrediction', True),
+            event_type=data['type']
         )
-        
+
         return event
     
     @staticmethod
@@ -72,4 +78,3 @@ class EventService:
             })
         
         return formatted if formatted else None
-
