@@ -1,10 +1,13 @@
 from flask import Blueprint, request, jsonify
+import logging
 from services.user_service import UserService
 from utils.validators import (
     AuthLoginSchema, AuthRegisterSchema, RefreshTokenSchema,
     validate_request_data
 )
 from utils.jwt_handler import require_auth, optional_auth
+
+logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
