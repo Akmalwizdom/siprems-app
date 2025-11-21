@@ -147,7 +147,7 @@ def create_app(config: Optional[object] = None) -> Flask:
         try:
             # Check database connectivity
             with app.get_db_session() as session:
-                session.execute("SELECT 1")
+                session.execute(text("SELECT 1"))
 
             # Check Redis connectivity
             cache_service = app.cache_service
