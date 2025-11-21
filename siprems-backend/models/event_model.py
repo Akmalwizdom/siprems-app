@@ -56,15 +56,17 @@ class EventModel:
         event_date: str,
         description: Optional[str] = None,
         include_in_prediction: bool = True,
+        event_type: str = "promotion",
     ) -> Dict[str, Any]:
         """
-        Create a new custom event.
+        Create a new event.
 
         Args:
             event_name: Name of the event (e.g., "Black Friday").
             event_date: Date when the event occurs (ISO format string or datetime).
             description: Optional description of the event.
             include_in_prediction: Whether to include in ML predictions. Defaults to True.
+            event_type: Type of event ('promotion', 'holiday', or 'store-closed'). Defaults to 'promotion'.
 
         Returns:
             Created event dictionary.
@@ -75,13 +77,17 @@ class EventModel:
         with get_db_session() as session:
             from datetime import datetime
 
+            valid_types = ["promotion", "holiday", "store-closed"]
+            if event_type not in valid_types:
+                event_type = "promotion"
+
             if isinstance(event_date, str):
                 event_date = datetime.fromisoformat(event_date)
 
             event = Event(
                 event_name=event_name,
                 event_date=event_date,
-                type="custom",
+                type=event_type,
                 description=description,
                 include_in_prediction=include_in_prediction,
             )
