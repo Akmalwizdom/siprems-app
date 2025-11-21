@@ -94,29 +94,29 @@ class PredictionService:
         # Generate restock recommendations
         future_forecast = forecast.tail(forecast_days)
         total_predicted_sales = future_forecast['yhat_corrected'].sum()
-        
+
         # Calculate buffer based on forecast window
         buffer_percent = 1.2 if forecast_days <= 7 else 1.1
-        optimal_stock = int(round(total_predicted_sales * buffer_percent))
+        predicted_demand = int(round(total_predicted_sales))
         current_stock = int(product_info['stock'])
-        
-        gap = optimal_stock - current_stock
-        
+
+        gap = predicted_demand - current_stock
+        recommended_restock = max(0, gap)
+
         if gap > 0:
-            suggestion = f"Restock +{int(gap)} unit"
-            urgency = "high" if gap > current_stock else "medium"
-            trend = "up"
+            if gap > current_stock:
+                urgency = "high"
+            else:
+                urgency = "medium"
         else:
-            suggestion = "Stok Aman"
             urgency = "low"
-            trend = "down"
-        
+
         recommendations = [{
-            'product': product_info['name'],
-            'current': current_stock,
-            'optimal': optimal_stock,
-            'trend': trend,
-            'suggestion': suggestion,
+            'productId': product_info.get('product_id', ''),
+            'productName': product_info['name'],
+            'currentStock': current_stock,
+            'predictedDemand': predicted_demand,
+            'recommendedRestock': recommended_restock,
             'urgency': urgency
         }]
         
