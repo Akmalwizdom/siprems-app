@@ -7,13 +7,14 @@ import json
 import logging
 from sqlalchemy import text
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from utils.config import get_config
 
-os.makedirs(os.environ.get('MODELS_DIR', '/app/models/trained'), exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.join(BASE_DIR, "models")
-META_DIR = os.path.join(MODELS_DIR, "meta")
+# Use config for model directories
+config = get_config()
+MODELS_DIR = config.MODELS_DIR
+META_DIR = config.MODELS_META_DIR
 
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(META_DIR, exist_ok=True)
