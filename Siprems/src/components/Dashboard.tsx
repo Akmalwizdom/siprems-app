@@ -13,7 +13,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { getDashboardMetrics, getSalesData, getCategroySales, getCriticalStockItems } from '../utils/mockData';
+import { getDashboardMetrics, getSalesData, getCategorySales, getCriticalStockItems } from '../utils/mockData';
 import { TimeRange, DashboardMetrics, SalesDataPoint, CategorySale, CriticalStockItem } from '../types';
 
 const timeRanges: { value: TimeRange; label: string }[] = [
